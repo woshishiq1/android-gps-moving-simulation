@@ -19,14 +19,35 @@
             android:elevation="1dp"
             app:navigationIcon="@drawable/ic_baseline_menu_24"/>
 
-        <include
-            android:id="@+id/search"
-            layout="@layout/include_search"
+        <!-- Simple search input for simple GPS mode -->
+        <EditText
+            android:id="@+id/simple_search"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_alignParentTop="true"
             android:layout_marginStart="18dp"
             android:layout_marginTop="72dp"
+            android:layout_marginEnd="18dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/search_box_background"
+            android:drawableStart="@drawable/ic_baseline_search_24"
+            android:drawablePadding="@dimen/padding_16"
+            android:hint="Search location..."
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:paddingStart="@dimen/padding_16"
+            android:paddingEnd="@dimen/padding_16"
+            android:paddingTop="@dimen/padding_16"
+            android:paddingBottom="@dimen/padding_16"
+            android:visibility="visible" />
+
+        <include
+            android:id="@+id/search"
+            layout="@layout/include_search"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignTop="@id/simple_search"
+            android:layout_marginStart="18dp"
             android:layout_marginEnd="18dp"
             android:layout_marginBottom="72dp"
             android:gravity="center_vertical"
@@ -34,7 +55,48 @@
             android:padding="8dp"
             android:paddingStart="8dp"
             android:textSize="18sp"
+            android:visibility="gone"
         />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/mode_toggle_button"
+            style="@style/Widget.Material3.Button.TextButton.Icon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/simple_search"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="4dp"
+            android:text="Route Mode"
+            android:textSize="12sp"
+            app:icon="@drawable/ic_baseline_my_location_24"
+            app:iconGravity="start"
+            app:iconSize="16dp" />
+
+        <TextView
+            android:id="@+id/route_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/search"
+            android:layout_marginStart="18dp"
+            android:layout_marginEnd="18dp"
+            android:layout_marginTop="8dp"
+            android:text="Nhập địa chỉ điểm bắt đầu và nhấn Search, sau đó chạm vào bản đồ để đánh dấu vị trí chính xác."
+            android:textColor="@android:color/white"
+            android:background="#66000000"
+            android:padding="8dp"
+            android:textSize="12sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/new_route_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/route_hint"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="4dp"
+            android:text="New Route"
+            android:textSize="12sp"
+            android:visibility="gone" />
 
         <include
             android:id="@+id/map_container"
@@ -43,11 +105,34 @@
             android:layout_width="match_parent"/>
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/auto_xoay"
+            style="@style/Widget.Material3.FloatingActionButton.Tertiary"
+            android:contentDescription="@string/autoxoay_desc"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:layout_marginTop="16dp"
+            android:alpha="0.95"
+            android:elevation="10dp"
+            android:insetLeft="0dp"
+            android:insetTop="0dp"
+            android:insetRight="0dp"
+            android:insetBottom="0dp"
+            app:icon="@drawable/compass"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="32dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:layout_above="@id/auto_xoay"
             android:id="@+id/getlocation"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Material3.FloatingActionButton.Surface"
             android:contentDescription="@string/getlocation_desc"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_alignParentBottom="true"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
@@ -66,14 +151,14 @@
             app:iconPadding="0dp"
             app:iconSize="32dp" />
             <!-- app:backgroundTint="@color/background" -->
-        
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/addfavorite"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Material3.FloatingActionButton.Surface"
             android:contentDescription="@string/addfavorite_desc"
             android:layout_above="@id/getlocation"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_alignParentEnd="true"
             android:layout_marginStart="32dp"
             android:layout_marginEnd="32dp"
@@ -88,14 +173,14 @@
             app:iconGravity="textStart"
             app:iconPadding="0dp"
             app:iconSize="32dp" />
-        
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/start_button"
             android:contentDescription="@string/location_set"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Material3.FloatingActionButton.Surface"
             android:layout_above="@id/addfavorite"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_alignParentEnd="true"
             android:layout_marginStart="32dp"
             android:layout_marginEnd="32dp"
@@ -105,20 +190,63 @@
             android:insetTop="0dp"
             android:insetRight="0dp"
             android:insetBottom="0dp"
-            app:icon="@drawable/ic_play" 
+            app:icon="@drawable/ic_play"
             app:iconGravity="textStart"
             app:iconPadding="0dp"
-            app:iconSize="32dp" 
+            app:iconSize="32dp"
 
             android:visibility="visible" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/drive_button"
+            style="@style/Widget.Material3.Button.ElevatedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_centerHorizontal="true"
+            android:layout_marginBottom="120dp"
+            android:text="Di chuyển"
+            android:textSize="16sp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/start_button_route"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_toStartOf="@+id/cancel_button_route"
+            android:layout_marginBottom="120dp"
+            android:layout_marginEnd="8dp"
+            android:text="Bắt đầu"
+            android:textSize="16sp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cancel_button_route"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_centerHorizontal="true"
+            android:layout_marginBottom="120dp"
+            android:text="Hủy"
+            android:textSize="16sp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/stop_button"
              android:contentDescription="@string/location_unset"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Material3.FloatingActionButton.Surface"
             android:layout_above="@id/addfavorite"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_alignParentEnd="true"
             android:layout_marginStart="32dp"
             android:layout_marginEnd="32dp"
@@ -133,9 +261,35 @@
             app:iconPadding="0dp"
             app:iconSize="32dp" 
 
-            android:visibility="gone" />
+            android:visibility="gone" />    </RelativeLayout>
 
-    </RelativeLayout>
+    <LinearLayout
+        android:id="@+id/drive_controls"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_alignParentBottom="true"
+        android:layout_margin="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/speed_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Speed: 50 km/h"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+
+        <SeekBar
+            android:id="@+id/speed_seekbar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="150"
+            android:progress="50" />
+
+    </LinearLayout>
 
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/nav_view"

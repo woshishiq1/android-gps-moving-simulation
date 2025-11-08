@@ -90,6 +90,8 @@ class JoystickService : Service(),View.OnTouchListener,View.OnClickListener {
     }
 
     private fun updateLocation(lat : Double,lon : Double){
+        // JoystickService uses direct PrefManager for manual control (not auto-route)
+        // This maintains consistency with the original manual GPS control feature
         PrefManager.update(start = PrefManager.isStarted, la = lat, ln = lon)
 
     }

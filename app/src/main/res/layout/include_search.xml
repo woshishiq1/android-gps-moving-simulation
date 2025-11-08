@@ -11,22 +11,39 @@
     <!-- android:animateLayoutChanges="true" -->
 
     <EditText
+        android:id="@+id/startBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/padding_16"
+        android:layout_marginTop="@dimen/padding_8"
+        android:layout_marginEnd="@dimen/padding_16"
+        android:layout_marginBottom="4dp"
+        android:background="@drawable/search_box_background"
+        android:drawableStart="@drawable/ic_play"
+        android:drawablePadding="@dimen/padding_16"
+        android:hint="Start (leave empty = current location)"
+        android:imeOptions="actionNext"
+        android:inputType="text"
+        android:paddingStart="@dimen/padding_16"
+        android:paddingEnd="52dp" />
+
+    <EditText
         android:id="@+id/searchBox"
         android:layout_width="match_parent"
         android:layout_height="@dimen/search_box_height"
+        android:layout_below="@id/startBox"
         android:layout_marginStart="@dimen/padding_16"
-        android:layout_marginTop="@dimen/padding_8"
+        android:layout_marginTop="4dp"
         android:layout_marginEnd="@dimen/padding_16"
         android:layout_marginBottom="@dimen/padding_8"
         android:background="@drawable/search_box_background"
         android:drawableStart="@drawable/ic_baseline_search_24"
         android:drawablePadding="@dimen/padding_16"
-        android:hint="@string/search"
+        android:hint="Destination (address or lat,lon)"
         android:imeOptions="actionSearch"
         android:inputType="text"
         android:paddingStart="@dimen/padding_16"
-        android:paddingEnd="52dp"   
-    />
+        android:paddingEnd="52dp" />
 
     <ProgressBar
         android:id="@+id/search_progress"
