@@ -1,4 +1,4 @@
-package io.github.jqssun.gpssetter.ui
+package io.github.mwarevn.fakegpsmoving.ui
 
 
 import android.Manifest
@@ -7,9 +7,9 @@ import android.content.pm.PackageManager
 import android.view.View
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
-import io.github.jqssun.gpssetter.R
-import io.github.jqssun.gpssetter.utils.ext.getAddress
-import io.github.jqssun.gpssetter.utils.ext.showToast
+import io.github.mwarevn.fakegpsmoving.R
+import io.github.mwarevn.fakegpsmoving.utils.ext.getAddress
+import io.github.mwarevn.fakegpsmoving.utils.ext.showToast
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
 import org.maplibre.android.WellKnownTileServer

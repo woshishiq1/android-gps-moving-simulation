@@ -12,7 +12,7 @@ def tagName = '0.0.6'
 android {
     compileSdk 34
     defaultConfig {
-        applicationId "io.github.jqssun.gpssetter"
+        applicationId "io.github.mwarevn.fakegpsmoving"
         minSdk 27
         targetSdk 34
         versionCode 6
@@ -82,7 +82,7 @@ android {
         }
     }
 
-    namespace 'io.github.jqssun.gpssetter'
+    namespace 'io.github.mwarevn.fakegpsmoving'
 }
 
 dependencies {
@@ -94,7 +94,7 @@ dependencies {
 
     // use microg (apache 2.0) and maplibre (bsd 2-clause)
     fossImplementation 'org.microg.gms:play-services-location:0.3.6.244735'
-    fossImplementation ('org.maplibre.gl:android-sdk:11.8.2') 
+    fossImplementation ('org.maplibre.gl:android-sdk:11.8.2')
     /* {
         exclude group: 'com.google.android.gms'
     } */

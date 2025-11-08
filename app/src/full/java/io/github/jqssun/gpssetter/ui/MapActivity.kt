@@ -1,4 +1,4 @@
-package io.github.jqssun.gpssetter.ui
+package io.github.mwarevn.fakegpsmoving.ui
 
 
 import android.Manifest
@@ -21,12 +21,12 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
-import io.github.jqssun.gpssetter.R
-import io.github.jqssun.gpssetter.utils.ext.getAddress
-import io.github.jqssun.gpssetter.utils.ext.showToast
-import io.github.jqssun.gpssetter.network.OsrmClient
-import io.github.jqssun.gpssetter.utils.PolylineUtils
-import io.github.jqssun.gpssetter.utils.RouteSimulator
+import io.github.mwarevn.fakegpsmoving.R
+import io.github.mwarevn.fakegpsmoving.utils.ext.getAddress
+import io.github.mwarevn.fakegpsmoving.utils.ext.showToast
+import io.github.mwarevn.fakegpsmoving.network.OsrmClient
+import io.github.mwarevn.fakegpsmoving.utils.PolylineUtils
+import io.github.mwarevn.fakegpsmoving.utils.RouteSimulator
 import android.location.Geocoder
 import android.location.Location
 import java.util.Locale
@@ -34,12 +34,16 @@ import android.location.Address
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import android.animation.ValueAnimator
+import android.os.Bundle
 import android.view.animation.LinearInterpolator
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.regex.Pattern
+import android.text.TextWatcher
+import android.text.Editable
+import kotlinx.coroutines.Job
 
 typealias CustomLatLng = LatLng
 
@@ -54,10 +58,22 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
     private var mDonePolyline: Polyline? = null
     private var routeSimulator: RouteSimulator? = null
     private var isDriving: Boolean = false
+    private var isPaused: Boolean = false
     private var originalPoints: List<LatLng> = emptyList()
     private var activeInput: Int = 0 // 0 none, 1 start, 2 dest
     private var routePlotted: Boolean = false
-    private var isRouteMode: Boolean = false // Toggle between route mode and simple GPS mode
+    // Removed isRouteMode - app now only supports route mode + basic set/unset location
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Enable GPS drift simulation for natural movement
+        io.github.mwarevn.fakegpsmoving.utils.PrefManager.isRandomPosition = true
+        // Use application-level hooking for better stealth (safer than system hook)
+        io.github.mwarevn.fakegpsmoving.utils.PrefManager.isSystemHooked = false
+        // Set realistic GPS accuracy (10-20 meters like real GPS)
+        io.github.mwarevn.fakegpsmoving.utils.PrefManager.accuracy = "15"
+    }
 
     override fun hasMarker(): Boolean {
         if (!mMarker?.isVisible!!) {
@@ -138,30 +154,16 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
                     // it.showInfoWindow()
                 }
             }
-
-            // Initialize UI mode after map is ready
-            updateUIForMode()
         }
     }
     override fun onMapClick(latLng: LatLng) {
-        // Only allow route planning in route mode
-        if (!isRouteMode) {
-            // In simple mode, clicking map just sets location like original app
-            viewModel.update(true, latLng.latitude, latLng.longitude)
-            updateMarker(latLng)
-            binding.startButton.visibility = View.GONE
-            binding.stopButton.visibility = View.VISIBLE
-            showToast("Location set to: ${latLng.latitude}, ${latLng.longitude}")
-            return
-        }
-
-        // Route mode logic (existing code)
         // Don't allow marking during driving
         if (isDriving) {
             showToast("Cannot change markers while driving")
             return
         }
 
+        // Route mode logic
         // Map click selects a location according to currently active input (1 = start, 2 = dest)
         when (activeInput) {
             1 -> {
@@ -177,8 +179,8 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
                 binding.search.searchBox.visibility = View.VISIBLE
                 activeInput = 0
 
-                // Update start input with coordinates
-                binding.search.startBox.setText("${latLng.latitude}, ${latLng.longitude}")
+                // Keep original search text, don't overwrite with coordinates
+                // binding.search.startBox.setText("${latLng.latitude}, ${latLng.longitude}")
             }
             2 -> {
                 mMarkerDest?.remove()
@@ -190,8 +192,8 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
                 showToast("Destination marked")
                 activeInput = 0
 
-                // Update destination input with coordinates
-                binding.search.searchBox.setText("${latLng.latitude}, ${latLng.longitude}")
+                // Keep original search text, don't overwrite with coordinates
+                // binding.search.searchBox.setText("${latLng.latitude}, ${latLng.longitude}")
             }
             else -> {
                 // Allow re-marking by double-tap or when no active input
@@ -283,6 +285,7 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
         routeSimulator?.stop()
         routeSimulator = null
         isDriving = false
+        isPaused = false
         routePlotted = false
         originalPoints = emptyList()
 
@@ -294,7 +297,10 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
 
         // Hide route controls
         binding.startButtonRoute.visibility = View.GONE
+        binding.pauseButtonRoute.visibility = View.GONE
+        binding.resumeButtonRoute.visibility = View.GONE
         binding.cancelButtonRoute.visibility = View.GONE
+        binding.cancelButtonRoute.text = "Hủy" // Reset text
         binding.driveControls.visibility = View.GONE
 
         // Show appropriate buttons based on marker state
@@ -332,65 +338,7 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
         showToast("Ready for new route planning")
     }
 
-    // Toggle between route mode and simple GPS mode
-    private fun toggleMode() {
-        isRouteMode = !isRouteMode
-        updateUIForMode()
-        if (isRouteMode) {
-            showToast("Switched to Route Mode")
-            // Clear simple search when switching to route mode
-            binding.simpleSearch.text?.clear()
-        } else {
-            showToast("Switched to Simple GPS Mode")
-            // Reset any route state when switching to simple mode
-            resetAllState()
-            viewModel.update(false, lat, lon) // Reset to real location
-        }
-    }
-
-    // Update UI visibility based on current mode
-    private fun updateUIForMode() {
-        if (isRouteMode) {
-            // Route Mode: Show route planning UI
-            binding.modeToggleButton.text = "Simple Mode"
-            binding.modeToggleButton.setIconResource(R.drawable.ic_baseline_search_24)
-            
-            // Show route UI
-            binding.search.startBox.visibility = View.VISIBLE
-            binding.routeHint.visibility = View.VISIBLE
-            
-            // Hide simple GPS UI
-            binding.simpleSearch.visibility = View.GONE
-            binding.startButton.visibility = View.GONE
-            binding.stopButton.visibility = View.GONE
-        } else {
-            // Simple Mode: Show original GPS setter UI
-            binding.modeToggleButton.text = "Route Mode"  
-            binding.modeToggleButton.setIconResource(R.drawable.ic_baseline_my_location_24)
-            
-            // Show simple GPS UI
-            binding.simpleSearch.visibility = View.VISIBLE
-            
-            // Hide route UI
-            binding.search.startBox.visibility = View.GONE
-            binding.search.searchBox.visibility = View.GONE
-            binding.routeHint.visibility = View.GONE
-            binding.newRouteButton.visibility = View.GONE
-            binding.driveButton.visibility = View.GONE
-            binding.startButtonRoute.visibility = View.GONE
-            binding.cancelButtonRoute.visibility = View.GONE
-            binding.driveControls.visibility = View.GONE
-            
-            // Show simple GPS controls based on current state
-            if (viewModel.isStarted) {
-                binding.startButton.visibility = View.GONE
-                binding.stopButton.visibility = View.VISIBLE
-            } else {
-                binding.startButton.visibility = View.VISIBLE
-                binding.stopButton.visibility = View.GONE
-            }
-        }
-    }    private suspend fun resolveAddressToLatLng(address: String): LatLng? = withContext(Dispatchers.IO) {
+    private suspend fun resolveAddressToLatLng(address: String): LatLng? = withContext(Dispatchers.IO) {
         try {
             // check if input looks like coordinates "lat,lon" or "lon,lat"
             val coordPattern = Pattern.compile("[-+]?\\d{1,3}([.]\\d+)?, *[-+]?\\d{1,3}([.]\\d+)?")
@@ -503,41 +451,22 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
             getLastLocation()
         }
 
-        // Mode toggle button
-        binding.modeToggleButton.setOnClickListener {
-            toggleMode()
-        }
+        // Show route planning UI by default
+        binding.search.startBox.visibility = View.VISIBLE
 
-        // Simple search input for simple GPS mode
-        binding.simpleSearch.setOnEditorActionListener { v, actionId, _ ->
-            if (isRouteMode) return@setOnEditorActionListener false
-            val text = v.text.toString().trim()
-            if (text.isNotEmpty()) {
-                lifecycleScope.launch {
-                    val latlon = resolveAddressToLatLng(text)
-                    latlon?.let {
-                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f))
-                        showToast("Tap map to set GPS at this location")
-                    } ?: showToast("Location not found")
-                }
-                true
-            } else {
-                false
-            }
-        }
-
-        // Initialize in simple mode
-        isRouteMode = false
-        // Don't call updateUIForMode() here, wait for onMapReady
-
-        // Force ensure initial state
-        binding.search.startBox.visibility = View.GONE
+        // Initially hide destination input and route-related buttons
         binding.search.searchBox.visibility = View.GONE
-        binding.simpleSearch.visibility = View.VISIBLE
+        binding.driveButton.visibility = View.GONE
+        binding.newRouteButton.visibility = View.GONE
+        binding.startButtonRoute.visibility = View.GONE
+        binding.pauseButtonRoute.visibility = View.GONE
+        binding.resumeButtonRoute.visibility = View.GONE
+        binding.cancelButtonRoute.visibility = View.GONE
+        binding.driveControls.visibility = View.GONE
 
         // Track focus on startBox
         binding.search.startBox.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus && !isDriving && isRouteMode) {
+            if (hasFocus && !isDriving) {
                 activeInput = 1
                 showToast("Tap map to set start location")
             }
@@ -545,25 +474,103 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
 
         // Track focus on searchBox
         binding.search.searchBox.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus && !isDriving && isRouteMode) {
+            if (hasFocus && !isDriving) {
                 activeInput = 2
                 showToast("Tap map to set destination")
             }
         }
 
-        // handle IME action on startBox: geocode and move map, then allow marking
+        // Auto-search for start location with delay
+        var startSearchJob: Job? = null
+        binding.search.startBox.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val text = s.toString().trim()
+                if (text.length >= 3) { // Minimum 3 characters to search
+                    startSearchJob?.cancel()
+                    startSearchJob = lifecycleScope.launch {
+                        delay(1000) // Wait 1 second after user stops typing
+                        val latlon = resolveAddressToLatLng(text)
+                        latlon?.let {
+                            // Move and zoom to location with higher zoom level
+                            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 18f))
+
+                            // Auto-mark start location
+                            mMarkerStart?.remove()
+                            mMarkerStart = mMap.addMarker(
+                                MarkerOptions().position(it).draggable(false)
+                                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
+                                    .title("Start")
+                            )
+
+                            // Show destination input
+                            binding.search.searchBox.visibility = View.VISIBLE
+                            showToast("Start location found and marked")
+                        }
+                    }
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        // Auto-search for destination with delay
+        var destSearchJob: Job? = null
+        binding.search.searchBox.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val text = s.toString().trim()
+                if (text.length >= 3) { // Minimum 3 characters to search
+                    destSearchJob?.cancel()
+                    destSearchJob = lifecycleScope.launch {
+                        delay(1000) // Wait 1 second after user stops typing
+                        val latlon = resolveAddressToLatLng(text)
+                        latlon?.let {
+                            // Move and zoom to location with higher zoom level
+                            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 18f))
+
+                            // Auto-mark destination location
+                            mMarkerDest?.remove()
+                            mMarkerDest = mMap.addMarker(
+                                MarkerOptions().position(it).draggable(false)
+                                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                                    .title("Destination")
+                            )
+
+                            showToast("Destination found and marked")
+
+                            // Show drive button if both markers exist
+                            if (mMarkerStart != null && mMarkerDest != null && !routePlotted) {
+                                binding.driveControls.visibility = View.VISIBLE
+                            }
+                        }
+                    }
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        // handle IME action on startBox: geocode, move map, and auto-mark start location
         binding.search.startBox.setOnEditorActionListener { v, actionId, _ ->
-            if (!isRouteMode) return@setOnEditorActionListener false
             val text = v.text.toString().trim()
             if (text.isNotEmpty()) {
                 lifecycleScope.launch {
                     val latlon = resolveAddressToLatLng(text)
                     latlon?.let {
-                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f))
-                        activeInput = 1
-                        showToast("Tap map to confirm start location or enter new address")
-                        // Show destination input when start has content
+                        // Move and zoom to location with higher zoom level
+                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 18f))
+
+                        // Auto-mark start location
+                        mMarkerStart?.remove()
+                        mMarkerStart = mMap.addMarker(
+                            MarkerOptions().position(it).draggable(false)
+                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
+                                .title("Start")
+                        )
+
+                        // Show destination input and allow refinement
                         binding.search.searchBox.visibility = View.VISIBLE
+                        activeInput = 1 // Keep start input active for refinement
+                        showToast("Start marked. Click map to adjust or enter destination address")
                     } ?: showToast("Start address not found")
                 }
                 true
@@ -572,17 +579,32 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
             }
         }
 
-        // handle IME action on dest (searchBox): geocode and move map, then allow marking
+        // handle IME action on dest (searchBox): geocode, move map, and auto-mark destination
         binding.search.searchBox.setOnEditorActionListener { v, actionId, _ ->
-            if (!isRouteMode) return@setOnEditorActionListener false
             val text = v.text.toString().trim()
             if (text.isNotEmpty()) {
                 lifecycleScope.launch {
                     val latlon = resolveAddressToLatLng(text)
                     latlon?.let {
-                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f))
-                        activeInput = 2
-                        showToast("Tap map to confirm destination or enter new address")
+                        // Move and zoom to location with higher zoom level
+                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 18f))
+
+                        // Auto-mark destination location
+                        mMarkerDest?.remove()
+                        mMarkerDest = mMap.addMarker(
+                            MarkerOptions().position(it).draggable(false)
+                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                                .title("Destination")
+                        )
+
+                        activeInput = 2 // Keep destination input active for refinement
+                        showToast("Destination marked. Click map to adjust or press 'Di chuyển' to plan route")
+
+                        // Show drive button if both markers exist
+                        if (mMarkerStart != null && mMarkerDest != null && !routePlotted) {
+                            binding.driveButton.visibility = View.VISIBLE
+                            binding.newRouteButton.visibility = View.VISIBLE
+                        }
                     } ?: showToast("Destination address not found")
                 }
                 true
@@ -617,26 +639,14 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
                     mDonePolyline = mMap.addPolyline(PolylineOptions().color(Color.GRAY).width(8f))
                     mRoutePolyline = mMap.addPolyline(PolylineOptions().addAll(pts).color(Color.BLUE).width(8f))
                     routePlotted = true
+
+                    // Hide drive button and show start/cancel buttons
+                    binding.driveButton.visibility = View.GONE
                     binding.startButtonRoute.visibility = View.VISIBLE // start journey
                     binding.cancelButtonRoute.visibility = View.VISIBLE // cancel route
-                    binding.driveControls.visibility = View.VISIBLE
+                    // No speed controls needed - using realistic motorbike speed
 
-                    // Setup speed controls
-                    val speedLabel = binding.driveControls.findViewById<TextView>(R.id.speed_label)
-                    val speedSeek = binding.driveControls.findViewById<SeekBar>(R.id.speed_seekbar)
-                    var speed = speedSeek.progress.toDouble()
-                    speedLabel.text = "Speed: ${speed.toInt()} km/h"
-                    speedSeek.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener{
-                        override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                            speed = progress.toDouble()
-                            speedLabel.text = "Speed: ${progress} km/h"
-                            routeSimulator?.setSpeedKmh(speed)
-                        }
-                        override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                        override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-                    })
-
-                    showToast("Route plotted. Press Start to begin or Cancel to remove.")
+                    showToast("🏍️ Motorbike route ready! Natural GPS drift enabled. Press Start to begin.")
                 } catch (e: Exception) {
                     e.printStackTrace()
                     showToast("Failed to fetch route: ${e.message}")
@@ -647,15 +657,17 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
         // New route start button handler
         binding.startButtonRoute.setOnClickListener {
             if (routePlotted && !isDriving) {
-                // start journey along plotted route
-                val speedSeek = binding.driveControls.findViewById<SeekBar>(R.id.speed_seekbar)
-                val speed = speedSeek.progress.toDouble()
+                // start journey along plotted route with motorbike speed (35-50 km/h)
+                val motorbikeSpeed = (35..50).random().toDouble() // Random motorbike speed for realism
                 routeSimulator?.stop()
-                routeSimulator = RouteSimulator(originalPoints, speedKmh = speed)
+                routeSimulator = RouteSimulator(originalPoints, speedKmh = motorbikeSpeed)
                 // set app-wide start flag at beginning
                 originalPoints.firstOrNull()?.let { st ->
                     viewModel.update(true, st.latitude, st.longitude)
                 }
+
+                showToast("🏍️ Starting motorbike simulation (${motorbikeSpeed.toInt()} km/h) with natural GPS drift")
+
                 routeSimulator?.start(onPosition = { pos ->
                     runOnUiThread {
                         // Update GPS using the same method as "Set Location" feature
@@ -667,13 +679,18 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
                 }, onComplete = {
                     runOnUiThread {
                         isDriving = false
-                        // Ensure GPS stays at final destination
+                        // Hide pause/resume buttons and reset cancel button
+                        binding.pauseButtonRoute.visibility = View.GONE
+                        binding.resumeButtonRoute.visibility = View.GONE
+                        binding.cancelButtonRoute.text = "Hủy"
+
+                        // Ensure GPS stays at final destination with natural drift
                         originalPoints.lastOrNull()?.let { finalPos ->
                             viewModel.update(true, finalPos.latitude, finalPos.longitude)
                         }
                         MaterialAlertDialogBuilder(this@MapActivity)
                             .setTitle("Đã đến nơi")
-                            .setMessage("Arrived at destination. GPS location will stay here until you choose an option.")
+                            .setMessage("🏍️ Arrived safely! Natural GPS drift and motorbike movement simulation active.")
                             .setPositiveButton("New Route") { _, _ ->
                                 // Reset GPS to real location and clear all
                                 viewModel.update(false, lat, lon)
@@ -688,9 +705,33 @@ class MapActivity: BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickLi
                     }
                 })
                 isDriving = true
+                // Hide start button, show pause button and rename cancel to stop
                 binding.startButtonRoute.visibility = View.GONE
-                binding.cancelButtonRoute.text = "Dừng"
+                binding.pauseButtonRoute.visibility = View.VISIBLE
+                binding.cancelButtonRoute.text = "Stop"
                 showToast("Journey started")
+            }
+        }
+
+        // Pause button handler
+        binding.pauseButtonRoute.setOnClickListener {
+            if (isDriving && routeSimulator?.isRunning() == true) {
+                routeSimulator?.pause()
+                isPaused = true
+                binding.pauseButtonRoute.visibility = View.GONE
+                binding.resumeButtonRoute.visibility = View.VISIBLE
+                showToast("Journey paused")
+            }
+        }
+
+        // Resume button handler
+        binding.resumeButtonRoute.setOnClickListener {
+            if (isDriving && isPaused) {
+                routeSimulator?.resume()
+                isPaused = false
+                binding.resumeButtonRoute.visibility = View.GONE
+                binding.pauseButtonRoute.visibility = View.VISIBLE
+                showToast("Journey resumed")
             }
         }
 
