@@ -14,7 +14,6 @@
     <string name="location_unset">Location unset</string>
     <string name="no_internet">No Internet</string>
     <string name="getlocation_desc">Get current location</string>
-    <string name="autoxoay_desc">Tự động xoay hướng</string>
     <string name="addfavorite_desc">Add favorite</string>
 
     <!-- Errors -->

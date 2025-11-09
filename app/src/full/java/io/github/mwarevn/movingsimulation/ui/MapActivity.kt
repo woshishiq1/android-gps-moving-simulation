@@ -2,7 +2,12 @@ package io.github.mwarevn.movingsimulation.ui
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Geocoder
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -112,7 +117,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         mMap.uiSettings.apply {
             isMyLocationButtonEnabled = false
             isZoomControlsEnabled = false
-            isCompassEnabled = false
+            isCompassEnabled = false  // Enable built-in compass
         }
 
         mMap.setOnMapClickListener(this)
@@ -120,7 +125,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         setupButtons()
         setupSearchBoxes()
-        
+
         // Restore fake location marker if it was set before app was closed
         restoreFakeLocationMarker()
     }
@@ -250,6 +255,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     override fun setupButtons() {
+        android.util.Log.d("MapActivity", "========== setupButtons() START ==========")
+
         // Floating buttons are always visible by default in layout
         // Initialize set/unset button icon based on GPS state
         isGpsSet = viewModel.isStarted
@@ -294,19 +301,6 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     currentFakeLocationPos!!, 15f
                 ))
             }
-        }
-
-        // Compass button
-        binding.autoXoay.setOnClickListener {
-            val currentPos = mMap.cameraPosition
-            mMap.animateCamera(CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder()
-                    .target(currentPos.target)
-                    .zoom(currentPos.zoom)
-                    .bearing(0f)
-                    .tilt(0f)
-                    .build()
-            ))
         }
 
         // Set/Unset location button
@@ -381,6 +375,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 showToast("Đã chọn vị trí hiện tại làm điểm bắt đầu")
             }
         }
+
+        android.util.Log.d("MapActivity", "========== setupButtons() END ==========")
     }
 
     private suspend fun searchLocation(query: String, onFound: (LatLng) -> Unit) {
@@ -811,16 +807,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         if (viewModel.isStarted) {
             val lat = viewModel.getLat
             val lng = viewModel.getLng
-            
+
             if (lat != 0.0 && lng != 0.0) {
                 val position = LatLng(lat, lng)
                 isGpsSet = true
                 currentFakeLocationPos = position
-                
+
                 // Show circle marker at saved position
                 updateFakeLocationMarker(position)
                 updateSetLocationButton()
-                
+
                 android.util.Log.d("MapActivity", "Restored fake location from previous session: $lat, $lng")
                 showToast("Đánh dấu lại vị trí GPS lần trước: ${String.format("%.4f", lat)}, ${String.format("%.4f", lng)}")
             }

@@ -13,7 +13,7 @@
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="?attr/actionBarSize"
             android:layout_marginTop="24dp"
             android:elevation="1dp"
@@ -255,8 +255,8 @@
             android:id="@+id/getlocation"
             style="@style/Widget.Material3.FloatingActionButton.Surface"
             android:contentDescription="@string/getlocation_desc"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
             android:layout_alignParentBottom="true"
             android:layout_marginEnd="16dp"
@@ -274,8 +274,8 @@
             android:id="@+id/getFakeLocation"
             style="@style/Widget.Material3.FloatingActionButton.Tertiary"
             android:contentDescription="Tới vị trí fake location"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
             android:layout_above="@id/getlocation"
             android:layout_marginEnd="16dp"
@@ -290,33 +290,14 @@
             app:iconPadding="0dp"
             app:iconSize="24dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/autoXoay"
-            style="@style/Widget.Material3.FloatingActionButton.Tertiary"
-            android:contentDescription="@string/autoxoay_desc"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_alignParentEnd="true"
-            android:layout_above="@id/getFakeLocation"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="8dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/compass"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="24dp" />
-
         <!-- Set/Unset Location Button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/setLocationButton"
             style="@style/Widget.Material3.FloatingActionButton.Primary"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
-            android:layout_above="@id/autoXoay"
+            android:layout_above="@id/getFakeLocation"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
             android:insetLeft="0dp"
