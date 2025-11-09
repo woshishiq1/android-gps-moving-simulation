@@ -94,6 +94,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     // Camera follow mode (only relevant during navigation)
     private var isCameraFollowing = true
 
+    // GPS stability improvements
+    private var lastGpsUpdateTime = 0L
+    private var previousLocation: LatLng? = null
+
     // UI State
     private enum class AppMode {
         SEARCH,      // Initial: searching for destination
@@ -104,6 +108,25 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     // Search jobs
     private var searchJob: Job? = null
+
+    /**
+     * Calculate bearing between two lat/lng points
+     * Returns bearing in degrees (0-360)
+     */
+    private fun calculateBearing(start: LatLng, end: LatLng): Float {
+        val lat1 = Math.toRadians(start.latitude)
+        val lat2 = Math.toRadians(end.latitude)
+        val deltaLng = Math.toRadians(end.longitude - start.longitude)
+        
+        val y = Math.sin(deltaLng) * Math.cos(lat2)
+        val x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng)
+        
+        var bearing = Math.toDegrees(Math.atan2(y, x))
+        if (bearing < 0) {
+            bearing += 360.0
+        }
+        return bearing.toFloat()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -684,7 +707,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = RouteSimulator(
             points = routePoints,
             speedKmh = currentSpeed,
-            updateIntervalMs = 150L,
+            updateIntervalMs = 250L, // Optimal balance for smooth + stable GPS
             scope = lifecycleScope
         )
 
@@ -693,25 +716,40 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator?.start(
             onPosition = { position ->
                 runOnUiThread {
-                    // Update GPS location
-                    viewModel.update(true, position.latitude, position.longitude)
+                    val currentTime = System.currentTimeMillis()
+                    
+                    // Calculate bearing for GPS metadata
+                    val bearing = previousLocation?.let { prev ->
+                        calculateBearing(prev, position)
+                    } ?: 0f
+                    
+                    // Update GPS location - simplified approach for stability
+                    viewModel.update(
+                        start = true, 
+                        la = position.latitude, 
+                        ln = position.longitude
+                    )
+                    
+                    // Log GPS data for debugging
+                    android.util.Log.d("GPS_Stable", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°")
 
-                    // Update current position circle and center dot
+                    // Update UI elements
                     fakeLocationCircle?.center = position
                     fakeLocationCenterDot?.center = position
 
                     // Update completed path (gray polyline)
                     updateCompletedPath(position)
 
-                    // Move camera to follow with throttling to avoid jitter (only if follow mode is enabled)
+                    // Move camera to follow with throttling (only if follow mode is enabled)
                     if (isCameraFollowing) {
-                        val currentTime = System.currentTimeMillis()
                         if (currentTime - lastCameraUpdateTime >= CAMERA_UPDATE_INTERVAL_MS) {
                             mMap.animateCamera(CameraUpdateFactory.newLatLng(position))
                             lastCameraUpdateTime = currentTime
                         }
                     }
 
+                    // Store current position for next bearing calculation
+                    previousLocation = position
                     currentPositionIndex++
                 }
             },
@@ -1132,32 +1170,47 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             routeSimulator = RouteSimulator(
                 points = routePoints,
                 speedKmh = currentSpeed,
-                updateIntervalMs = 150L,
+                updateIntervalMs = 250L, // Optimal balance for smooth + stable GPS
                 scope = lifecycleScope
             )
 
             routeSimulator?.start(
                 onPosition = { position ->
                     runOnUiThread {
-                        // Update GPS location
-                        viewModel.update(true, position.latitude, position.longitude)
+                        val currentTime = System.currentTimeMillis()
+                        
+                        // Calculate bearing for GPS metadata
+                        val bearing = previousLocation?.let { prev ->
+                            calculateBearing(prev, position)
+                        } ?: 0f
+                        
+                        // Update GPS location - simplified approach for stability
+                        viewModel.update(
+                            start = true, 
+                            la = position.latitude, 
+                            ln = position.longitude
+                        )
+                        
+                        // Log GPS data for debugging
+                        android.util.Log.d("GPS_Stable", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°")
 
-                        // Update current position circle
+                        // Update UI elements
                         fakeLocationCircle?.center = position
                         fakeLocationCenterDot?.center = position
 
                         // Update completed path (gray polyline)
                         updateCompletedPath(position)
 
-                        // Move camera to follow with throttling to avoid jitter (only if follow mode is enabled)
+                        // Move camera to follow with throttling (only if follow mode is enabled)
                         if (isCameraFollowing) {
-                            val currentTime = System.currentTimeMillis()
                             if (currentTime - lastCameraUpdateTime >= CAMERA_UPDATE_INTERVAL_MS) {
                                 mMap.animateCamera(CameraUpdateFactory.newLatLng(position))
                                 lastCameraUpdateTime = currentTime
                             }
                         }
 
+                        // Store current position for next bearing calculation
+                        previousLocation = position
                         currentPositionIndex++
                     }
                 },

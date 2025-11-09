@@ -4,30 +4,43 @@ import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.*
 
 /**
- * Simulates movement along a polyline (list of LatLng) at a given speed (km/h).
- * Provides position updates via callback - GPS mocking is handled by the caller
- * using the same method as the "Set Location" feature for consistency and stealth.
+ * RouteSimulator - Enhanced GPS movement simulation for route navigation
+ * Simulates movement along a route with configurable speed and realistic GPS behavior
  *
- * Enhanced with precise motorbike movement patterns:
- * - Constant speed movement
- * - Precise route following without GPS drift
- * - Smooth continuous movement
+ * Optimized for GPS stability:
+ * - Single frequency 250ms updates for optimal balance
+ * - Light GPS jitter for realism
+ * - Stable performance without complexity
  */
 class RouteSimulator(
     private val points: List<LatLng>,
     private var speedKmh: Double = 45.0, // Default motorbike speed
-    private val updateIntervalMs: Long = 150L,
+    private val updateIntervalMs: Long = 250L, // Optimal balance: smooth + stable
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
 
     private var job: Job? = null
     private var paused: Boolean = false
 
+    /**
+     * Add light GPS jitter for realistic behavior (±0.3m)
+     */
+    private fun addGpsJitter(position: LatLng): LatLng {
+        val jitterLat = (Math.random() - 0.5) * 0.000003 // ~0.3m jitter
+        val jitterLng = (Math.random() - 0.5) * 0.000003
+        return LatLng(
+            position.latitude + jitterLat,
+            position.longitude + jitterLng
+        )
+    }
+
     fun start(onPosition: (LatLng) -> Unit = {}, onComplete: (() -> Unit)? = null) {
         stop()
         if (points.size < 2) return
+
         job = scope.launch {
             var idx = 0
+
             while (idx < points.size - 1 && isActive) {
                 val a = points[idx]
                 val b = points[idx + 1]
@@ -37,7 +50,6 @@ class RouteSimulator(
                     continue
                 }
 
-                // Recalculate speed for each iteration to support real-time speed changes
                 var traveled = 0.0
                 while (traveled < segMeters && isActive) {
                     if (paused) {
@@ -52,20 +64,22 @@ class RouteSimulator(
                     val frac = (traveled / segMeters).coerceIn(0.0, 1.0)
                     val lat = a.latitude + (b.latitude - a.latitude) * frac
                     val lng = a.longitude + (b.longitude - a.longitude) * frac
+                    val position = LatLng(lat, lng)
 
-                    val pos = LatLng(lat, lng)
+                    // Add realistic GPS jitter
+                    val gpsPosition = addGpsJitter(position)
+                    onPosition(gpsPosition)
 
-                    onPosition(pos)
                     traveled += stepMeters
-
                     delay(updateIntervalMs)
                 }
 
-                // ensure arrive at exact destination point
-                onPosition(b)
+                // Ensure we arrive at exact destination point
+                onPosition(addGpsJitter(b))
                 idx++
             }
-            // finished route
+
+            // Finished route
             onComplete?.invoke()
         }
     }
