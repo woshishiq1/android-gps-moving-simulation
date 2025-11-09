@@ -17,6 +17,7 @@ class HookEntry : IXposedHookLoadPackage {
                 }
             })
         }
+
         LocationHook.initHooks(lpparam)
     }
 }

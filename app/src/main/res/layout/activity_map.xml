@@ -316,7 +316,7 @@
             android:layout_alignParentEnd="true"
             android:layout_alignParentBottom="true"
             android:layout_marginEnd="16dp"
-            android:layout_marginBottom="100dp"
+            android:layout_marginBottom="200dp"
             android:insetLeft="0dp"
             android:insetTop="0dp"
             android:insetRight="0dp"
@@ -361,6 +361,27 @@
             android:insetRight="0dp"
             android:insetBottom="0dp"
             app:icon="@drawable/ic_play"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="24dp" />
+
+        <!-- Camera Follow Toggle Button (only visible during navigation) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cameraFollowToggle"
+            style="@style/Widget.Material3.FloatingActionButton.Secondary"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_alignParentEnd="true"
+            android:layout_above="@id/setLocationButton"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:insetLeft="0dp"
+            android:insetTop="0dp"
+            android:insetRight="0dp"
+            android:insetBottom="0dp"
+            android:visibility="gone"
+            android:contentDescription="Bật/tắt theo dõi camera"
+            app:icon="@android:drawable/ic_menu_camera"
             app:iconGravity="textStart"
             app:iconPadding="0dp"
             app:iconSize="24dp" />

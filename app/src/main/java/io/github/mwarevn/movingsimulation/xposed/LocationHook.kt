@@ -30,6 +30,8 @@ object LocationHook {
     private const val earth = 6378137.0
     private val settings = Xshare()
     private var mLastUpdated: Long = 0
+
+    @JvmStatic
     private val ignorePkg = arrayListOf("com.android.location.fused", BuildConfig.APPLICATION_ID)
 
     private val context by lazy { AndroidAppHelper.currentApplication() as Context }
@@ -51,6 +53,12 @@ object LocationHook {
             Timber.tag("GPS Setter")
                 .e(e, "Failed to get XposedSettings for %s", context.packageName)
         }
+    }
+
+    // thêm helper để thêm package vào ignore list (an toàn)
+    @JvmStatic
+    fun addIgnoredPackage(pkg: String) {
+        if (!ignorePkg.contains(pkg)) ignorePkg.add(pkg)
     }
 
     @SuppressLint("NewApi")
