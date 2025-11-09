@@ -108,6 +108,44 @@
 
                 </LinearLayout>
 
+                <!-- Quick Use Current Fake Location as Start Point -->
+                <LinearLayout
+                    android:id="@+id/use_current_location_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="12dp"
+                    android:visibility="gone"
+                    android:background="?attr/selectableItemBackground"
+                    android:layout_marginTop="4dp">
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@android:drawable/ic_menu_mylocation"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="12dp"
+                        android:tint="?attr/colorPrimary" />
+
+                    <TextView
+                        android:id="@+id/use_current_location_text"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Dùng vị trí hiện tại làm điểm bắt đầu"
+                        android:textSize="14sp"
+                        android:textColor="?attr/colorPrimary" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@android:drawable/ic_menu_view"
+                        android:layout_marginEnd="4dp"
+                        android:tint="?attr/colorPrimary" />
+
+                </LinearLayout>
+
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
@@ -233,13 +271,33 @@
             app:iconSize="24dp" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/getFakeLocation"
+            style="@style/Widget.Material3.FloatingActionButton.Tertiary"
+            android:contentDescription="Tới vị trí fake location"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_alignParentEnd="true"
+            android:layout_above="@id/getlocation"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:insetLeft="0dp"
+            android:insetTop="0dp"
+            android:insetRight="0dp"
+            android:insetBottom="0dp"
+            android:visibility="gone"
+            app:icon="@drawable/ic_baseline_my_location_24"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="24dp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/autoXoay"
             style="@style/Widget.Material3.FloatingActionButton.Tertiary"
             android:contentDescription="@string/autoxoay_desc"
             android:layout_width="56dp"
             android:layout_height="56dp"
             android:layout_alignParentEnd="true"
-            android:layout_above="@id/getlocation"
+            android:layout_above="@id/getFakeLocation"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
             android:insetLeft="0dp"

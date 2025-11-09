@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -28,7 +30,7 @@ import java.util.*
 /**
  * Clean redesigned MapActivity with Google Maps-like UX
  */
-class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickListener {
+class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickListener, GoogleMap.OnMarkerDragListener {
 
     // Map & Markers
     private lateinit var mMap: GoogleMap
@@ -50,6 +52,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var completedPolyline: Polyline? = null
     private var currentPositionIndex = 0
     private var isGpsSet = false // Track GPS state locally for immediate UI update
+    private var currentFakeLocationPos: LatLng? = null // Store current fake location for quick use
 
     // UI State
     private enum class AppMode {
@@ -113,9 +116,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
 
         mMap.setOnMapClickListener(this)
+        mMap.setOnMarkerDragListener(this)
 
         setupButtons()
         setupSearchBoxes()
+        
+        // Restore fake location marker if it was set before app was closed
+        restoreFakeLocationMarker()
     }
 
     private fun getCurrentLocation() {
@@ -280,6 +287,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             }
         }
 
+        // Get fake location button
+        binding.getFakeLocation.setOnClickListener {
+            if (currentFakeLocationPos != null) {
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(
+                    currentFakeLocationPos!!, 15f
+                ))
+            }
+        }
+
         // Compass button
         binding.autoXoay.setOnClickListener {
             val currentPos = mMap.cameraPosition
@@ -302,6 +318,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 // Unset GPS - remove circle to avoid confusion
                 android.util.Log.d("MapActivity", "Unsetting GPS")
                 isGpsSet = false
+                currentFakeLocationPos = null
                 viewModel.update(false, 0.0, 0.0)
                 updateSetLocationButton()
                 // Remove fake location marker and circle when unsetting
@@ -315,6 +332,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 val targetPosition = destMarker?.position ?: mMap.cameraPosition.target
                 android.util.Log.d("MapActivity", "Setting GPS to: ${targetPosition.latitude}, ${targetPosition.longitude}")
                 isGpsSet = true
+                currentFakeLocationPos = targetPosition
                 viewModel.update(true, targetPosition.latitude, targetPosition.longitude)
                 updateSetLocationButton()
                 // Show fake location circle
@@ -352,6 +370,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 binding.pauseButton.visibility = View.VISIBLE
                 binding.resumeButton.visibility = View.GONE
                 showToast("Tiếp tục di chuyển")
+            }
+        }
+
+        // Quick use current fake location as start point
+        binding.useCurrentLocationContainer.setOnClickListener {
+            if (currentFakeLocationPos != null) {
+                setStartMarker(currentFakeLocationPos!!)
+                binding.useCurrentLocationContainer.visibility = View.GONE
+                showToast("Đã chọn vị trí hiện tại làm điểm bắt đầu")
             }
         }
     }
@@ -392,6 +419,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 .position(position)
                 .title("Điểm đến")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                .draggable(true)
         )
 
         // Move camera
@@ -437,6 +465,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 .position(position)
                 .title("Điểm bắt đầu")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
+                .draggable(true)
         )
 
         // Move camera to show both markers
@@ -458,6 +487,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Show start location input
         binding.startSearchContainer.visibility = View.VISIBLE
         binding.startSearch.requestFocus()
+
+        // Show quick use current location button if GPS is set
+        if (isGpsSet && currentFakeLocationPos != null) {
+            binding.useCurrentLocationContainer.visibility = View.VISIBLE
+            binding.useCurrentLocationText.text = "Dùng vị trí hiện tại (${String.format("%.4f", currentFakeLocationPos!!.latitude)}, ${String.format("%.4f", currentFakeLocationPos!!.longitude)})"
+        } else {
+            binding.useCurrentLocationContainer.visibility = View.GONE
+        }
 
         showToast("Chọn điểm bắt đầu trên bản đồ hoặc nhập địa chỉ")
     }
@@ -515,6 +552,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isPaused = false
         currentMode = AppMode.NAVIGATION
         currentPositionIndex = 0
+
+        // Clear old fake location marker and circle when starting navigation
+        // because the fake location is now moving along the route
+        fakeLocationMarker?.remove()
+        fakeLocationMarker = null
+        fakeLocationCircle?.remove()
+        fakeLocationCircle = null
+        currentFakeLocationPos = null
 
         // Hide action button and show navigation controls
         binding.actionButton.visibility = View.GONE
@@ -613,9 +658,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         if (isGpsSet) {
             // GPS is set -> show stop icon (to unset)
             binding.setLocationButton.setIconResource(R.drawable.ic_stop)
+            // Show getFakeLocation button when GPS is set
+            binding.getFakeLocation.visibility = View.VISIBLE
         } else {
             // GPS is not set -> show play icon (to set)
             binding.setLocationButton.setIconResource(R.drawable.ic_play)
+            // Hide getFakeLocation button when GPS is not set
+            binding.getFakeLocation.visibility = View.GONE
         }
     }
 
@@ -698,6 +747,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         val destinationPos = routePoints.lastOrNull() ?: destMarker?.position
         if (destinationPos != null) {
             isGpsSet = true
+            currentFakeLocationPos = destinationPos
             viewModel.update(true, destinationPos.latitude, destinationPos.longitude)
             updateFakeLocationMarker(destinationPos)
             updateSetLocationButton()
@@ -746,6 +796,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.visibility = View.GONE
         binding.navigationControlsCard.visibility = View.GONE
         binding.startSearchContainer.visibility = View.GONE
+        binding.useCurrentLocationContainer.visibility = View.GONE
         binding.destinationSearch.text.clear()
         binding.startSearch.text.clear()
         binding.searchCard.visibility = View.VISIBLE
@@ -755,9 +806,68 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isPaused = false
     }
 
+    private fun restoreFakeLocationMarker() {
+        // Check if fake location was set in previous session
+        if (viewModel.isStarted) {
+            val lat = viewModel.getLat
+            val lng = viewModel.getLng
+            
+            if (lat != 0.0 && lng != 0.0) {
+                val position = LatLng(lat, lng)
+                isGpsSet = true
+                currentFakeLocationPos = position
+                
+                // Show circle marker at saved position
+                updateFakeLocationMarker(position)
+                updateSetLocationButton()
+                
+                android.util.Log.d("MapActivity", "Restored fake location from previous session: $lat, $lng")
+                showToast("Đánh dấu lại vị trí GPS lần trước: ${String.format("%.4f", lat)}, ${String.format("%.4f", lng)}")
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         routeSimulator?.stop()
         searchJob?.cancel()
+    }
+
+    // Marker Drag Listener implementations
+    override fun onMarkerDrag(marker: Marker) {
+        // Don't update route while dragging to reduce server load
+        // Route will be updated when drag ends
+    }
+
+    override fun onMarkerDragEnd(marker: Marker) {
+        // Update route only when drag ends to reduce server calls
+        if (currentMode == AppMode.ROUTE_PLAN && startMarker != null && destMarker != null) {
+            drawRoute()
+        }
+
+        // Show final position
+        when (marker) {
+            destMarker -> {
+                showToast("Điểm đến cập nhật tại ${String.format("%.4f", marker.position.latitude)}, ${String.format("%.4f", marker.position.longitude)}")
+            }
+            startMarker -> {
+                showToast("Điểm bắt đầu cập nhật tại ${String.format("%.4f", marker.position.latitude)}, ${String.format("%.4f", marker.position.longitude)}")
+            }
+        }
+    }
+
+    override fun onMarkerDragStart(marker: Marker) {
+        // Add vibration feedback when drag starts
+        val vibrator = getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+        if (vibrator.hasVibrator()) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                // Vibrate for 100ms with amplitude 200
+                vibrator.vibrate(VibrationEffect.createOneShot(100, 200))
+            } else {
+                // For older Android versions
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(100)
+            }
+        }
     }
 }
