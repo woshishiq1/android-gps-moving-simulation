@@ -196,7 +196,7 @@
                     android:value="40"
                     android:stepSize="5"/>
 
-                <!-- Pause/Resume Buttons -->
+                <!-- Pause/Resume/Stop Buttons -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -220,12 +220,68 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp"
                         android:text="Tiếp tục"
                         android:visibility="gone"
                         app:icon="@drawable/ic_play"/>
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/stop_button"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="Dừng"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_stop"/>
+
                 </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Completion Actions Card (shown when navigation is complete) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/completion_actions_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp"
+            android:elevation="8dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:gravity="center">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/completed_restart_button"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="Bắt đầu lại"
+                    app:icon="@drawable/ic_play"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/completed_finish_button"
+                    style="@style/Widget.Material3.Button.ElevatedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:text="Hoàn tất"
+                    app:icon="@drawable/ic_stop"/>
 
             </LinearLayout>
 
