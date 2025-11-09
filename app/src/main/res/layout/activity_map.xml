@@ -19,79 +19,210 @@
             android:elevation="1dp"
             app:navigationIcon="@drawable/ic_baseline_menu_24"/>
 
-        <include
-            android:id="@+id/search"
-            layout="@layout/include_search"
+        <!-- Search Box for Destination -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/search_card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_alignParentTop="true"
-            android:layout_marginStart="18dp"
-            android:layout_marginTop="72dp"
-            android:layout_marginEnd="18dp"
-            android:layout_marginBottom="72dp"
-            android:gravity="center_vertical"
-            android:lines="1"
-            android:padding="8dp"
-            android:paddingStart="8dp"
-            android:textSize="18sp"
-        />
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginTop="80dp"
+            android:elevation="8dp"
+            app:cardCornerRadius="28dp"
+            app:cardElevation="8dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/new_route_button"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_below="@id/search"
-            android:layout_centerHorizontal="true"
-            android:layout_marginTop="4dp"
-            android:text="New Route"
-            android:textSize="12sp"
-            android:visibility="gone" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="4dp">
 
+                <!-- Destination Search Box (Always visible) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="8dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_search"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="12dp"
+                        android:tint="?attr/colorPrimary" />
+
+                    <EditText
+                        android:id="@+id/destination_search"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="Tìm kiếm địa điểm"
+                        android:background="@android:color/transparent"
+                        android:imeOptions="actionSearch"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textSize="16sp" />
+
+                    <ImageButton
+                        android:id="@+id/clear_search"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@android:drawable/ic_menu_close_clear_cancel"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:visibility="gone"
+                        android:contentDescription="Clear" />
+
+                </LinearLayout>
+
+                <!-- Start Location Search Box (Shown when in route mode) -->
+                <LinearLayout
+                    android:id="@+id/start_search_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="8dp"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_mylocation"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="12dp"
+                        android:tint="?attr/colorSecondary" />
+
+                    <EditText
+                        android:id="@+id/start_search"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="Điểm bắt đầu"
+                        android:background="@android:color/transparent"
+                        android:imeOptions="actionSearch"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textSize="16sp" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+        <!-- Map Container -->
         <include
             android:id="@+id/map_container"
             layout="@layout/map_container"
             android:layout_height="match_parent"
             android:layout_width="match_parent"/>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/auto_xoay"
-            style="@style/Widget.Material3.FloatingActionButton.Tertiary"
-            android:contentDescription="@string/autoxoay_desc"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:layout_marginTop="16dp"
-            android:alpha="0.95"
-            android:elevation="10dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/compass"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="32dp" />
+        <!-- Navigation Controls Card (visible during navigation) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/navigation_controls_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp"
+            android:elevation="8dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp">
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Speed Control -->
+                <TextView
+                    android:id="@+id/speed_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Tốc độ: 40 km/h"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:layout_marginBottom="8dp"/>
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/speed_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="10"
+                    android:valueTo="100"
+                    android:value="40"
+                    android:stepSize="5"/>
+
+                <!-- Pause/Resume Buttons -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginTop="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/pause_button"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="Tạm dừng"
+                        app:icon="@drawable/ic_pause"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/resume_button"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="Tiếp tục"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_play"/>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Bottom Action Button -->
         <com.google.android.material.button.MaterialButton
-            android:layout_above="@id/auto_xoay"
+            android:id="@+id/action_button"
+            style="@style/Widget.Material3.Button.ElevatedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="32dp"
+            android:text="Chỉ đường"
+            android:textSize="16sp"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp"
+            android:elevation="8dp"
+            android:visibility="gone"
+            app:icon="@drawable/ic_baseline_directions_24"
+            app:iconGravity="start" />
+
+        <!-- Floating Action Buttons (Right Side) -->
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/getlocation"
             style="@style/Widget.Material3.FloatingActionButton.Surface"
             android:contentDescription="@string/getlocation_desc"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_alignParentBottom="true"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
             android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="96dp"
-            android:alpha="0.95"
-            android:elevation="10dp"
+            android:layout_alignParentBottom="true"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="100dp"
             android:insetLeft="0dp"
             android:insetTop="0dp"
             android:insetRight="0dp"
@@ -99,43 +230,37 @@
             app:icon="@drawable/ic_baseline_my_location_24"
             app:iconGravity="textStart"
             app:iconPadding="0dp"
-            app:iconSize="32dp" />
-            <!-- app:backgroundTint="@color/background" -->
+            app:iconSize="24dp" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/addfavorite"
-            style="@style/Widget.Material3.FloatingActionButton.Surface"
-            android:contentDescription="@string/addfavorite_desc"
-            android:layout_above="@id/getlocation"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:id="@+id/autoXoay"
+            style="@style/Widget.Material3.FloatingActionButton.Tertiary"
+            android:contentDescription="@string/autoxoay_desc"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
             android:layout_alignParentEnd="true"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:layout_marginTop="16dp"
-            android:alpha="0.95"
-            android:elevation="10dp"
+            android:layout_above="@id/getlocation"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
             android:insetLeft="0dp"
             android:insetTop="0dp"
             android:insetRight="0dp"
             android:insetBottom="0dp"
-            app:icon="@drawable/ic_baseline_favorite"
+            app:icon="@drawable/compass"
             app:iconGravity="textStart"
             app:iconPadding="0dp"
-            app:iconSize="32dp" />
+            app:iconSize="24dp" />
 
+        <!-- Set/Unset Location Button -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/start_button"
-            android:contentDescription="@string/location_set"
-            style="@style/Widget.Material3.FloatingActionButton.Surface"
-            android:layout_above="@id/addfavorite"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:id="@+id/setLocationButton"
+            style="@style/Widget.Material3.FloatingActionButton.Primary"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
             android:layout_alignParentEnd="true"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:alpha="0.95"
-            android:elevation="10dp"
+            android:layout_above="@id/autoXoay"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
             android:insetLeft="0dp"
             android:insetTop="0dp"
             android:insetRight="0dp"
@@ -143,134 +268,9 @@
             app:icon="@drawable/ic_play"
             app:iconGravity="textStart"
             app:iconPadding="0dp"
-            app:iconSize="32dp"
+            app:iconSize="24dp" />
 
-            android:visibility="visible" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/drive_button"
-            style="@style/Widget.Material3.Button.ElevatedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_centerHorizontal="true"
-            android:layout_marginBottom="120dp"
-            android:text="Di chuyển"
-            android:textSize="16sp"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:visibility="gone" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/start_button_route"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_toStartOf="@+id/cancel_button_route"
-            android:layout_marginBottom="120dp"
-            android:layout_marginEnd="8dp"
-            android:text="Bắt đầu"
-            android:textSize="16sp"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:visibility="gone" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/cancel_button_route"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_centerHorizontal="true"
-            android:layout_marginBottom="120dp"
-            android:text="Hủy"
-            android:textSize="16sp"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:visibility="gone" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/pause_button_route"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_toStartOf="@+id/cancel_button_route"
-            android:layout_marginBottom="120dp"
-            android:layout_marginEnd="8dp"
-            android:text="Pause"
-            android:textSize="16sp"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:visibility="gone" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/resume_button_route"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_toStartOf="@+id/cancel_button_route"
-            android:layout_marginBottom="120dp"
-            android:layout_marginEnd="8dp"
-            android:text="Resume"
-            android:textSize="16sp"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:visibility="gone" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/stop_button"
-             android:contentDescription="@string/location_unset"
-            style="@style/Widget.Material3.FloatingActionButton.Surface"
-            android:layout_above="@id/addfavorite"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_alignParentEnd="true"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:alpha="0.95"
-            android:elevation="10dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/ic_stop"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="32dp" 
-
-            android:visibility="gone" />
     </RelativeLayout>
-
-    <LinearLayout
-        android:id="@+id/drive_controls"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_alignParentBottom="true"
-        android:layout_margin="12dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/speed_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Speed: 50 km/h"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
-
-        <SeekBar
-            android:id="@+id/speed_seekbar"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:max="150"
-            android:progress="50" />
-
-    </LinearLayout>
 
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/nav_view"

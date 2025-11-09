@@ -6,7 +6,7 @@ name: Generate APK
 env:
     main_project_module: app
     target_owner: Xposed-Modules-Repo
-    target_repo: io.github.mwarevn.fakegpsmoving
+    target_repo: io.github.mwarevn.movingsimulation
     target_path: target_path
 
 on:
@@ -80,7 +80,7 @@ jobs:
               uses: softprops/action-gh-release@v2
               with:
                   token: ${{ secrets.PAT }}
-                  repository: Xposed-Modules-Repo/io.github.mwarevn.fakegpsmoving
+                  repository: Xposed-Modules-Repo/io.github.mwarevn.movingsimulation
                   name: v${{ env.version }}
                   tag_name: v${{ env.version }}
                   files: |

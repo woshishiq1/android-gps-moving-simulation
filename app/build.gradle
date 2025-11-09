@@ -12,7 +12,7 @@ def tagName = '0.0.6'
 android {
     compileSdk 34
     defaultConfig {
-        applicationId "io.github.mwarevn.fakegpsmoving"
+        applicationId "io.github.mwarevn.movingsimulation"
         minSdk 27
         targetSdk 34
         versionCode 6
@@ -82,7 +82,7 @@ android {
         }
     }
 
-    namespace 'io.github.mwarevn.fakegpsmoving'
+    namespace 'io.github.mwarevn.movingsimulation'
 }
 
 dependencies {

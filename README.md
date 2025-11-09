@@ -1,7 +1,7 @@
 # GPS Setter
 
 [![Stars](https://img.shields.io/github/stars/jqssun/android-gps-setter)](https://github.com/jqssun/android-gps-setter/stargazers)
-[![LSPosed](https://img.shields.io/github/downloads/Xposed-Modules-Repo/io.github.mwarevn.fakegpsmoving/total?label=LSPosed&logo=Android&style=flat&labelColor=F48FB1&logoColor=ffffff)](https://github.com/Xposed-Modules-Repo/io.github.mwarevn.fakegpsmoving/releases)
+[![LSPosed](https://img.shields.io/github/downloads/Xposed-Modules-Repo/io.github.mwarevn.movingsimulation/total?label=LSPosed&logo=Android&style=flat&labelColor=F48FB1&logoColor=ffffff)](https://github.com/Xposed-Modules-Repo/io.github.mwarevn.movingsimulation/releases)
 [![GitHub](https://img.shields.io/github/downloads/jqssun/android-gps-setter/total?label=GitHub&logo=GitHub)](https://github.com/jqssun/android-gps-setter/releases)
 [![release](https://img.shields.io/github/v/release/jqssun/android-gps-setter)](https://github.com/jqssun/android-gps-setter/releases)
 [![build](https://img.shields.io/github/actions/workflow/status/jqssun/android-gps-setter/apk.yml)](https://github.com/jqssun/android-gps-setter/actions/workflows/apk.yml)
@@ -38,7 +38,7 @@ A GPS setter based on the Xposed framework. This fork is the first module to ach
             </a>
         </td>
         <td>
-            <a href="https://f-droid.org/packages/io.github.mwarevn.fakegpsmoving">
+            <a href="https://f-droid.org/packages/io.github.mwarevn.movingsimulation">
                 <img
                     src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
                     alt="Get it on F-Droid" width="200" />
