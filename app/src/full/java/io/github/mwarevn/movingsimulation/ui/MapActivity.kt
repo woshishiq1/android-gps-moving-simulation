@@ -723,15 +723,17 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                         calculateBearing(prev, position)
                     } ?: 0f
                     
-                    // Update GPS location - simplified approach for stability
+                    // Update GPS location - variable timing approach for anti-detection
                     viewModel.update(
                         start = true, 
                         la = position.latitude, 
                         ln = position.longitude
                     )
                     
-                    // Log GPS data for debugging
-                    android.util.Log.d("GPS_Stable", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°")
+                    // Log GPS data with timing variance for debugging
+                    val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
+                    android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                    lastGpsUpdateTime = currentTime
 
                     // Update UI elements
                     fakeLocationCircle?.center = position
@@ -1184,15 +1186,17 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                             calculateBearing(prev, position)
                         } ?: 0f
                         
-                        // Update GPS location - simplified approach for stability
+                        // Update GPS location - variable timing approach for anti-detection
                         viewModel.update(
                             start = true, 
                             la = position.latitude, 
                             ln = position.longitude
                         )
                         
-                        // Log GPS data for debugging
-                        android.util.Log.d("GPS_Stable", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°")
+                        // Log GPS data with timing variance for debugging
+                        val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
+                        android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                        lastGpsUpdateTime = currentTime
 
                         // Update UI elements
                         fakeLocationCircle?.center = position
