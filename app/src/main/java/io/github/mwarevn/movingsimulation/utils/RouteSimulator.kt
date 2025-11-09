@@ -37,16 +37,17 @@ class RouteSimulator(
                     continue
                 }
 
-                // Constant speed for precise motorbike movement
-                val speedMs = speedKmh * 1000.0 / 3600.0
-
+                // Recalculate speed for each iteration to support real-time speed changes
                 var traveled = 0.0
-                val stepMeters = speedMs * (updateIntervalMs.toDouble() / 1000.0);
                 while (traveled < segMeters && isActive) {
                     if (paused) {
                         delay(updateIntervalMs)
                         continue
                     }
+
+                    // Calculate current speed and step distance (allows real-time speed changes)
+                    val currentSpeedMs = speedKmh * 1000.0 / 3600.0
+                    val stepMeters = currentSpeedMs * (updateIntervalMs.toDouble() / 1000.0)
 
                     val frac = (traveled / segMeters).coerceIn(0.0, 1.0)
                     val lat = a.latitude + (b.latitude - a.latitude) * frac

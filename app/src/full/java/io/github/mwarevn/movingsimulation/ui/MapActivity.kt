@@ -198,15 +198,21 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     override fun onMapClick(position: LatLng) {
         when (currentMode) {
             AppMode.SEARCH -> {
-                // Mark as destination
-                setDestinationMarker(position)
+                // Only allow setting destination if none exists yet
+                if (destMarker == null) {
+                    setDestinationMarker(position)
+                } else {
+                    // Show hint to use drag/drop or search instead
+                    showToast("Kéo thả điểm đánh dấu hoặc tìm kiếm để thay đổi vị trí")
+                }
             }
             AppMode.ROUTE_PLAN -> {
-                // User can re-mark start or destination
+                // Only allow setting start point if destination already exists
                 if (startMarker == null) {
                     setStartMarker(position)
                 } else {
-                    setDestinationMarker(position)
+                    // Both markers exist - prevent accidental changes
+                    showToast("Kéo thả điểm đánh dấu hoặc tìm kiếm để thay đổi vị trí")
                 }
             }
             AppMode.NAVIGATION -> {
@@ -295,13 +301,18 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.setOnClickListener {
             when (currentMode) {
                 AppMode.SEARCH -> {
-                    // User wants to plan route
-                    enterRoutePlanMode()
+                    // This shouldn't happen with new logic, but fallback
+                    if (destMarker != null) {
+                        enterRoutePlanMode()
+                    }
                 }
                 AppMode.ROUTE_PLAN -> {
-                    // Start navigation
                     if (startMarker != null && destMarker != null) {
+                        // Both markers set - start navigation
                         startNavigation()
+                    } else if (destMarker != null && startMarker == null) {
+                        // Only destination set - show start location input
+                        enterRoutePlanMode()
                     } else {
                         showToast("Vui lòng chọn điểm bắt đầu và điểm đến")
                     }
@@ -380,11 +391,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Speed slider control
         binding.speedSlider.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
-                currentSpeed = value.toDouble()
-                binding.speedLabel.text = "Tốc độ: ${value.toInt()} km/h"
-                // Update speed in real-time if driving
-                if (isDriving && !isPaused) {
-                    routeSimulator?.setSpeedKmh(currentSpeed)
+                val newSpeed = value.toDouble()
+                // Prevent 0 speed during navigation to avoid stopping
+                val actualSpeed = if (isDriving && newSpeed <= 0) 1.0 else newSpeed
+                
+                currentSpeed = actualSpeed
+                binding.speedLabel.text = "Tốc độ: ${actualSpeed.toInt()} km/h"
+                
+                android.util.Log.d("MapActivity", "Speed changed to: $actualSpeed km/h (isDriving: $isDriving, isPaused: $isPaused)")
+                
+                // Update speed in real-time if driving and not paused
+                if (isDriving && !isPaused && routeSimulator != null) {
+                    routeSimulator?.setSpeedKmh(actualSpeed)
+                    android.util.Log.d("MapActivity", "RouteSimulator speed updated to: $actualSpeed km/h")
                 }
             }
         }
@@ -406,6 +425,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             if (isDriving && isPaused) {
                 isPaused = false
                 routeSimulator?.resume()
+                // Ensure current speed is applied when resuming
+                routeSimulator?.setSpeedKmh(currentSpeed)
                 binding.pauseButton.visibility = View.VISIBLE
                 binding.resumeButton.visibility = View.GONE
                 binding.stopButton.visibility = View.GONE
@@ -492,7 +513,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             setIconResource(R.drawable.ic_baseline_directions_24)
         }
 
-        currentMode = AppMode.SEARCH
+        // Don't allow map clicks to change destination anymore
+        // User must use drag/drop or search to modify
+        currentMode = AppMode.ROUTE_PLAN
+
+        // Show hint about how to modify markers
+        showToast("Điểm đến đã đặt. Kéo thả điểm đánh dấu hoặc tìm kiếm để thay đổi")
 
         // If in route planning mode and destination changes, clear route
         if (routePolyline != null) {
@@ -633,8 +659,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.resumeButton.visibility = View.GONE
         binding.stopButton.visibility = View.GONE
 
-        // Set initial speed
+        // Set initial speed and update label
         currentSpeed = binding.speedSlider.value.toDouble()
+        binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
+        
+        android.util.Log.d("MapActivity", "Navigation started with speed: $currentSpeed km/h")
 
         // Hide search inputs
         binding.searchCard.visibility = View.GONE
@@ -643,6 +672,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isCameraFollowing = true
         binding.cameraFollowToggle.visibility = View.VISIBLE
         updateCameraFollowButton()
+
+        // Hide getFakeLocation button during navigation (user has camera toggle instead)
+        binding.getFakeLocation.visibility = View.GONE
 
         // Create navigation circle (purple with center dot)
         val startPos = routePoints.first()
@@ -713,6 +745,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.searchCard.visibility = View.VISIBLE
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
+        
+        // Restore getFakeLocation button visibility if GPS is set
+        if (isGpsSet) {
+            binding.getFakeLocation.visibility = View.VISIBLE
+        }
+        
         binding.actionButton.visibility = View.VISIBLE
         binding.actionButton.apply {
             text = "Dừng"
@@ -876,6 +914,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
 
+        // Restore getFakeLocation button since navigation completed
+        binding.getFakeLocation.visibility = View.VISIBLE
+
         // Remove current position circle (but will show completion actions)
         fakeLocationCircle?.remove()
         fakeLocationCircle = null
@@ -932,6 +973,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.destinationSearch.text.clear()
         binding.startSearch.text.clear()
         binding.searchCard.visibility = View.VISIBLE
+
+        // Restore getFakeLocation button visibility based on GPS state
+        binding.getFakeLocation.visibility = if (isGpsSet) View.VISIBLE else View.GONE
 
         routeSimulator?.stop()
         routeSimulator = null
@@ -1034,6 +1078,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.useCurrentLocationContainer.visibility = View.GONE
         binding.searchCard.visibility = View.VISIBLE
 
+        // Restore getFakeLocation button since GPS is still set at destination
+        binding.getFakeLocation.visibility = View.VISIBLE
+
         // Stop the route simulator
         routeSimulator?.stop()
 
@@ -1068,6 +1115,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             isCameraFollowing = true
             binding.cameraFollowToggle.visibility = View.VISIBLE
             updateCameraFollowButton()
+
+            // Hide getFakeLocation button during navigation restart
+            binding.getFakeLocation.visibility = View.GONE
+
+            // Ensure speed label shows current speed
+            binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
 
             // Create fresh navigation circle at start point
             val startPos = routePoints.firstOrNull()
@@ -1171,12 +1224,17 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             fakeLocationCircle = createStationaryLocationCircle(currentPosition)
 
             updateSetLocationButton()
-        }        // Reset UI to search mode
+        }
+        
+        // Reset UI to search mode
         currentMode = AppMode.SEARCH
         binding.actionButton.visibility = View.GONE
         binding.startSearchContainer.visibility = View.GONE
         binding.useCurrentLocationContainer.visibility = View.GONE
         binding.searchCard.visibility = View.VISIBLE
+
+        // Restore getFakeLocation button since GPS is now set at pause position
+        binding.getFakeLocation.visibility = View.VISIBLE
 
         showToast("Đã dừng. GPS được set tại vị trí tạm dừng")
     }
