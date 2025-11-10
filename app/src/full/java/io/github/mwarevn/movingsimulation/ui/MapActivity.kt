@@ -419,15 +419,20 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             if (isGpsSet) {
                 // Unset GPS - remove circle to avoid confusion
                 android.util.Log.d("MapActivity", "Unsetting GPS")
-                isGpsSet = false
-                currentFakeLocationPos = null
-                viewModel.update(false, 0.0, 0.0)
-                updateSetLocationButton()
-                // Remove fake location marker and circle when unsetting
+
+                // Remove fake location marker, circle AND center dot FIRST (before updating state)
                 fakeLocationMarker?.remove()
                 fakeLocationMarker = null
                 fakeLocationCircle?.remove()
                 fakeLocationCircle = null
+                fakeLocationCenterDot?.remove()
+                fakeLocationCenterDot = null
+
+                // Then update state
+                isGpsSet = false
+                currentFakeLocationPos = null
+                viewModel.update(false, 0.0, 0.0)
+                updateSetLocationButton()
                 showToast("GPS đã được reset về vị trí thật")
             } else {
                 // Set GPS to destination marker if exists, otherwise current map center
@@ -848,12 +853,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Update markers to be non-draggable during navigation
         updateMarkersDraggableState()
 
-        // Clear old fake location marker and circle when starting navigation
+        // Clear old fake location marker, circle AND center dot when starting navigation
         // because the fake location is now moving along the route
         fakeLocationMarker?.remove()
         fakeLocationMarker = null
         fakeLocationCircle?.remove()
         fakeLocationCircle = null
+        fakeLocationCenterDot?.remove()
+        fakeLocationCenterDot = null
         currentFakeLocationPos = null
 
         // Hide action button and show navigation controls
@@ -1132,6 +1139,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Hide navigation controls
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
+        binding.cancelRouteButton.visibility = View.GONE
 
         // Restore getFakeLocation button since navigation completed
         binding.getFakeLocation.visibility = View.VISIBLE
@@ -1407,6 +1415,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.visibility = View.GONE
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
+        binding.cancelRouteButton.visibility = View.GONE
         binding.startSearchContainer.visibility = View.GONE
         binding.useCurrentLocationContainer.visibility = View.GONE
         binding.searchCard.visibility = View.VISIBLE
@@ -1443,6 +1452,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             binding.pauseButton.visibility = View.VISIBLE
             binding.resumeButton.visibility = View.GONE
             binding.stopButton.visibility = View.GONE
+            binding.cancelRouteButton.visibility = View.GONE
 
             // Show camera follow toggle and reset to follow mode
             isCameraFollowing = true
@@ -1562,6 +1572,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Hide navigation controls
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
+        binding.cancelRouteButton.visibility = View.GONE
         binding.pauseButton.visibility = View.VISIBLE
         binding.resumeButton.visibility = View.GONE
         binding.stopButton.visibility = View.GONE
@@ -1571,6 +1582,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             isGpsSet = true
             currentFakeLocationPos = currentPosition
             viewModel.update(true, currentPosition.latitude, currentPosition.longitude)
+
+            // Clear old circle and center dot before creating new ones
+            fakeLocationCircle?.remove()
+            fakeLocationCircle = null
+            fakeLocationCenterDot?.remove()
+            fakeLocationCenterDot = null
 
             // Create fake location circle at pause position (since navigation stopped)
             fakeLocationCircle = createStationaryLocationCircle(currentPosition)
