@@ -3,7 +3,10 @@ package io.github.mwarevn.movingsimulation.ui
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.location.Geocoder
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -39,25 +42,18 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Route colors
         const val ROUTE_COLOR = "#006eff" // Blue route line
         const val ROUTE_WIDTH = 18f // Route line width
-        const val COMPLETED_ROUTE_COLOR = "#909090ff" // Gray completed path
+        const val COMPLETED_ROUTE_COLOR = "#909090" // Gray completed path
 
-        // Fake location (stationary) circle colors - Cyan
-        const val FAKE_LOCATION_STROKE_COLOR = 0xFF00BCD4.toInt() // Cyan stroke (solid)
-        const val FAKE_LOCATION_FILL_COLOR = 0x5000BCD4.toInt()   // Semi-transparent cyan fill
-        const val FAKE_LOCATION_CENTER_COLOR = 0xFF00BCD4.toInt() // Solid cyan center dot
-
-        // Navigation (moving) circle colors - Purple
-        const val NAVIGATION_STROKE_COLOR = 0xFF9C27B0.toInt()    // Purple stroke (solid)
-        const val NAVIGATION_FILL_COLOR = 0x509C27B0.toInt()      // Semi-transparent purple fill
-        const val NAVIGATION_CENTER_COLOR = 0xFF9C27B0.toInt()    // Solid purple center dot
+        // Fake location (stationary) circle colors - Orange Red
+        const val FAKE_LOCATION_STROKE_COLOR = 0xFFFF4500.toInt() // Orange Red stroke (solid)
+        const val FAKE_LOCATION_FILL_COLOR = 0x50FF4500.toInt()   // Semi-transparent orange red fill
+        const val FAKE_LOCATION_CENTER_COLOR = 0xFFFF4500.toInt() // Solid orange red center dot
 
         // Circle dimensions
-        const val CIRCLE_RADIUS = 15.0              // Outer circle radius in meters
+        const val CIRCLE_RADIUS = 20.0              // Outer circle radius in meters
         const val CIRCLE_STROKE_WIDTH = 3f          // Outer circle border width
-        const val CENTER_DOT_RADIUS = 4.0           // Center dot radius in meters
-        const val CENTER_DOT_STROKE_WIDTH = 0f      // Center dot border (0 = no border)
-        const val CIRCLE_Z_INDEX = 100f             // Outer circle Z-index
-        const val CENTER_DOT_Z_INDEX = 101f         // Center dot Z-index (higher = on top)
+        const val CIRCLE_Z_INDEX = 128f             // Outer circle Z-index
+        const val CENTER_DOT_Z_INDEX = 129f         // Center dot Z-index (higher = on top)
     }
 
     // Map & Markers
@@ -67,7 +63,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var routePolyline: Polyline? = null
 
     // Center dot marker for fake location circle
-    private var fakeLocationCenterDot: Circle? = null
+    private var fakeLocationCenterDot: Marker? = null
 
     // Route simulation
     private var routeSimulator: RouteSimulator? = null
@@ -97,6 +93,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     // GPS stability improvements
     private var lastGpsUpdateTime = 0L
     private var previousLocation: LatLng? = null
+    private var currentNavigationPosition: LatLng? = null // Track current position during navigation
+
+    // Background state management
+    private var wasNavigatingBeforeBackground = false
+    private var backgroundNavigationState: NavigationState? = null
+
+    data class NavigationState(
+        val routePoints: List<LatLng>,
+        val currentSpeed: Double,
+        val isPaused: Boolean,
+        val currentPositionIndex: Int,
+        val completedPathPoints: List<LatLng>
+    )
 
     // UI State
     private enum class AppMode {
@@ -109,6 +118,37 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     // Search jobs
     private var searchJob: Job? = null
+
+    // Route loading state
+    private var isLoadingRoute = false
+    private var routeLoadError: String? = null
+
+    /**
+     * Create a circular bitmap icon for center dot that maintains size at all zoom levels
+     * Similar to Google Maps real location icon with white border
+     */
+    private fun createCenterDotIcon(color: Int, sizePx: Int = 36): BitmapDescriptor {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val radius = sizePx / 2f
+
+        // Draw white border (outer circle)
+        val borderPaint = Paint().apply {
+            this.color = android.graphics.Color.WHITE
+            isAntiAlias = true
+        }
+        canvas.drawCircle(radius, radius, radius, borderPaint)
+
+        // Draw colored center (inner circle)
+        val centerPaint = Paint().apply {
+            this.color = color
+            isAntiAlias = true
+        }
+        val innerRadius = radius * 0.75f // 75% of outer radius
+        canvas.drawCircle(radius, radius, innerRadius, centerPaint)
+
+        return BitmapDescriptorFactory.fromBitmap(bitmap)
+    }
 
     /**
      * Calculate bearing between two lat/lng points
@@ -408,11 +448,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             if (isDriving) {
                 isCameraFollowing = !isCameraFollowing
                 updateCameraFollowButton()
-                if (isCameraFollowing) {
-                    showToast("Camera bám theo vị trí")
-                } else {
-                    showToast("Camera tự do")
-                }
+//                if (isCameraFollowing) {
+//                    showToast("Camera bám theo vị trí")
+//                } else {
+//                    showToast("Camera tự do")
+//                }
             }
         }
 
@@ -487,6 +527,21 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 binding.useCurrentLocationContainer.visibility = View.GONE
                 // showToast("Đã chọn vị trí hiện tại làm điểm bắt đầu")
             }
+        }
+
+        // Route error retry button
+        binding.routeRetryButton.setOnClickListener {
+            retryDrawRoute()
+        }
+
+        // Route error cancel button
+        binding.routeErrorCancelButton.setOnClickListener {
+            cancelRoutePlan()
+        }
+
+        // Cancel route button (next to start button)
+        binding.cancelRouteButton.setOnClickListener {
+            cancelRoutePlan()
         }
 
         android.util.Log.d("MapActivity", "========== setupButtons() END ==========")
@@ -654,6 +709,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private fun drawRoute() {
         if (startMarker == null || destMarker == null) return
 
+        // Show loading state
+        isLoadingRoute = true
+        routeLoadError = null
+        binding.actionButton.apply {
+            visibility = View.GONE
+        }
+        binding.routeLoadingCard.visibility = View.VISIBLE
+        binding.routeLoadingProgressText.text = "Đang tìm tuyến đường..."
+
         lifecycleScope.launch {
             try {
                 val start = startMarker!!.position
@@ -664,7 +728,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 val route = OsrmClient.service.getRoute(coords)
 
                 if (route.routes.isNullOrEmpty() || route.routes[0].geometry == null) {
-                    showToast("Không tìm thấy đường đi")
+                    // Handle error
+                    routeLoadError = "Không tìm thấy đường đi"
+                    isLoadingRoute = false
+                    showRouteErrorUI()
                     return@launch
                 }
 
@@ -680,18 +747,88 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                         .width(ROUTE_WIDTH)
                 )
 
-                // Update button to "Bắt đầu"
+                // Hide loading, show action button
+                isLoadingRoute = false
+                routeLoadError = null
+                binding.routeLoadingCard.visibility = View.GONE
+
+                // Update button to "Bắt đầu" with cancel button
                 binding.actionButton.apply {
                     text = "Bắt đầu"
                     setIconResource(R.drawable.ic_play)
+                    visibility = View.VISIBLE
                 }
+                binding.cancelRouteButton.visibility = View.VISIBLE
 
                 // showToast("Đường đi đã sẵn sàng. Nhấn Bắt đầu để di chuyển")
 
             } catch (e: Exception) {
-                showToast("Lỗi vẽ đường: ${e.message}")
+                // Handle error
+                routeLoadError = "Lỗi vẽ đường: ${e.message}"
+                isLoadingRoute = false
+                showRouteErrorUI()
             }
         }
+    }
+
+    private fun showRouteErrorUI() {
+        binding.routeLoadingCard.visibility = View.GONE
+        binding.routeErrorCard.visibility = View.VISIBLE
+        binding.routeErrorText.text = routeLoadError ?: "Không xác định lỗi"
+        binding.actionButton.visibility = View.GONE
+        binding.cancelRouteButton.visibility = View.GONE
+    }
+
+    private fun hideRouteErrorUI() {
+        binding.routeErrorCard.visibility = View.GONE
+        routeLoadError = null
+    }
+
+    private fun retryDrawRoute() {
+        hideRouteErrorUI()
+        drawRoute()
+    }
+
+    private fun cancelRoutePlan() {
+        // Stop loading if in progress
+        isLoadingRoute = false
+        routeLoadError = null
+
+        // Hide error and loading cards
+        binding.routeLoadingCard.visibility = View.GONE
+        binding.routeErrorCard.visibility = View.GONE
+
+        // Clear route
+        routePolyline?.remove()
+        routePolyline = null
+        routePoints = emptyList()
+
+        // Clear start marker but keep destination marker
+        startMarker?.remove()
+        startMarker = null
+
+        // Reset to search mode
+        currentMode = AppMode.SEARCH
+        hasSelectedStartPoint = false
+
+        // Hide search containers
+        binding.startSearchContainer.visibility = View.GONE
+        binding.useCurrentLocationContainer.visibility = View.GONE
+
+        // Show "Chỉ đường" button again with destination marker still visible
+        binding.actionButton.apply {
+            text = "Chỉ đường"
+            setIconResource(R.drawable.ic_baseline_directions_24)
+            visibility = View.VISIBLE
+        }
+
+        // Hide cancel route button
+        binding.cancelRouteButton.visibility = View.GONE
+
+        // Show search card
+        binding.searchCard.visibility = View.VISIBLE
+
+        showToast("Đã huỷ chỉ đường")
     }
 
     private fun startNavigation() {
@@ -745,16 +882,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Hide getFakeLocation button during navigation (user has camera toggle instead)
         binding.getFakeLocation.visibility = View.GONE
 
-        // Create navigation circle (purple with center dot)
-        val startPos = routePoints.first()
-        fakeLocationCircle = createNavigationCircle(startPos)
+        // Hide set/unset location button during navigation
+        binding.setLocationButton.visibility = View.GONE
 
-        // Start route simulator
+        // Create fake location circle to show current GPS position during navigation
+        val startPos = routePoints.first()
+        fakeLocationCircle = createStationaryLocationCircle(startPos)
+
+        // Start route simulator with GlobalScope for background execution
         routeSimulator = RouteSimulator(
             points = routePoints,
             speedKmh = currentSpeed,
             updateIntervalMs = 250L, // Optimal balance for smooth + stable GPS
-            scope = lifecycleScope
+            scope = GlobalScope // Use GlobalScope to continue running in background
         )
 
        // showToast("🏍️ Bắt đầu di chuyển với tốc độ ${currentSpeed.toInt()} km/h")
@@ -781,9 +921,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
                     lastGpsUpdateTime = currentTime
 
-                    // Update UI elements
+                    // Track current navigation position for pause/stop functionality
+                    currentNavigationPosition = position
+
+                    // Update fake location circle to show current GPS position
                     fakeLocationCircle?.center = position
-                    fakeLocationCenterDot?.center = position
+                    fakeLocationCenterDot?.position = position
+                    // Let Google Maps blue dot handle position visualization
 
                     // Update completed path (gray polyline)
                     updateCompletedPath(position)
@@ -837,6 +981,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             binding.getFakeLocation.visibility = View.VISIBLE
         }
 
+        // Restore set/unset location button visibility
+        binding.setLocationButton.visibility = View.VISIBLE
+
         binding.actionButton.visibility = View.VISIBLE
         binding.actionButton.apply {
             text = "Dừng"
@@ -888,7 +1035,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     PolylineOptions()
                         .addAll(completedPathPoints)
                         .color(Color.parseColor(COMPLETED_ROUTE_COLOR))
-                        .width(ROUTE_WIDTH)
+                        .width(ROUTE_WIDTH + 1)
                 )
             } else {
                 completedPolyline?.points = ArrayList(completedPathPoints)
@@ -943,15 +1090,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Remove old center dot if exists
         fakeLocationCenterDot?.remove()
 
-        // Create center dot if requested
+        // Create center dot marker if requested (maintains size at all zoom levels)
         if (showCenterDot) {
-            fakeLocationCenterDot = mMap.addCircle(
-                CircleOptions()
-                    .center(center)
-                    .radius(CENTER_DOT_RADIUS)
-                    .fillColor(centerColor)
-                    .strokeColor(centerColor) // Add stroke color same as fill
-                    .strokeWidth(CENTER_DOT_STROKE_WIDTH)
+            fakeLocationCenterDot = mMap.addMarker(
+                MarkerOptions()
+                    .position(center)
+                    .icon(createCenterDotIcon(centerColor))
+                    .anchor(0.5f, 0.5f) // Center the icon on the position
                     .zIndex(CENTER_DOT_Z_INDEX)
             )
         }
@@ -969,7 +1114,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     /**
-     * Helper: Create stationary fake location circle (Cyan)
+     * Helper: Create stationary fake location circle (Orange Red)
      */
     private fun createStationaryLocationCircle(center: LatLng): Circle {
         return createFakeLocationCircle(
@@ -977,18 +1122,6 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             strokeColor = FAKE_LOCATION_STROKE_COLOR,
             fillColor = FAKE_LOCATION_FILL_COLOR,
             centerColor = FAKE_LOCATION_CENTER_COLOR
-        )
-    }
-
-    /**
-     * Helper: Create moving navigation circle (Purple)
-     */
-    private fun createNavigationCircle(center: LatLng): Circle {
-        return createFakeLocationCircle(
-            center = center,
-            strokeColor = NAVIGATION_STROKE_COLOR,
-            fillColor = NAVIGATION_FILL_COLOR,
-            centerColor = NAVIGATION_CENTER_COLOR
         )
     }
 
@@ -1002,6 +1135,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Restore getFakeLocation button since navigation completed
         binding.getFakeLocation.visibility = View.VISIBLE
+
+        // Restore set/unset location button since navigation completed
+        binding.setLocationButton.visibility = View.VISIBLE
 
         // Remove current position circle (but will show completion actions)
         fakeLocationCircle?.remove()
@@ -1098,6 +1234,96 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         super.onDestroy()
         routeSimulator?.stop()
         searchJob?.cancel()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Save navigation state when going to background
+        if (isDriving) {
+            wasNavigatingBeforeBackground = true
+            backgroundNavigationState = NavigationState(
+                routePoints = routePoints,
+                currentSpeed = currentSpeed,
+                isPaused = isPaused,
+                currentPositionIndex = currentPositionIndex,
+                completedPathPoints = ArrayList(completedPathPoints)
+            )
+            android.util.Log.d("MapActivity", "Saved navigation state to background")
+        }
+        // Don't pause route simulator when going to background during navigation
+        // Let it continue running for seamless background GPS simulation
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Restore navigation state when returning from background
+        if (wasNavigatingBeforeBackground && backgroundNavigationState != null) {
+            val savedState = backgroundNavigationState!!
+
+            // Restore navigation variables
+            routePoints = savedState.routePoints
+            currentSpeed = savedState.currentSpeed
+            isPaused = savedState.isPaused
+            currentPositionIndex = savedState.currentPositionIndex
+            completedPathPoints.clear()
+            completedPathPoints.addAll(savedState.completedPathPoints)
+
+            // Ensure UI is in sync with current navigation state
+            updateNavigationUI()
+            android.util.Log.d("MapActivity", "Restored navigation state from background")
+
+            // Clear the saved state
+            wasNavigatingBeforeBackground = false
+            backgroundNavigationState = null
+        } else if (isDriving && !isPaused) {
+            // Regular UI refresh for ongoing navigation
+            updateNavigationUI()
+        }
+    }
+
+    /**
+     * Update navigation UI when returning from background
+     */
+    private fun updateNavigationUI() {
+        if (isDriving) {
+            // Ensure navigation controls are visible
+            binding.navigationControlsCard.visibility = View.VISIBLE
+            binding.searchCard.visibility = View.GONE
+            binding.cameraFollowToggle.visibility = View.VISIBLE
+            binding.setLocationButton.visibility = View.GONE
+            binding.getFakeLocation.visibility = View.GONE
+
+            // Update pause/resume button states
+            if (isPaused) {
+                binding.pauseButton.visibility = View.GONE
+                binding.resumeButton.visibility = View.VISIBLE
+                binding.stopButton.visibility = View.VISIBLE
+            } else {
+                binding.pauseButton.visibility = View.VISIBLE
+                binding.resumeButton.visibility = View.GONE
+                binding.stopButton.visibility = View.GONE
+            }
+
+            // Update speed label
+            binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
+
+            // Restore fake location circle if missing
+            if (fakeLocationCircle == null && currentNavigationPosition != null) {
+                fakeLocationCircle = createStationaryLocationCircle(currentNavigationPosition!!)
+                android.util.Log.d("MapActivity", "Restored fake location circle at: ${currentNavigationPosition!!.latitude}, ${currentNavigationPosition!!.longitude}")
+            }
+
+            // Restore completed path polyline if missing
+            if (completedPolyline == null && completedPathPoints.size > 1) {
+                completedPolyline = mMap.addPolyline(
+                    PolylineOptions()
+                        .addAll(completedPathPoints)
+                        .color(Color.parseColor(COMPLETED_ROUTE_COLOR))
+                        .width(ROUTE_WIDTH + 1)
+                )
+                android.util.Log.d("MapActivity", "Restored completed path polyline")
+            }
+        }
     }
 
     // Marker Drag Listener implementations
@@ -1229,18 +1455,18 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             // Ensure speed label shows current speed
             binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
 
-            // Create fresh navigation circle at start point
+            // Create fake location circle at start point to show GPS position
             val startPos = routePoints.firstOrNull()
             if (startPos != null) {
-                fakeLocationCircle = createNavigationCircle(startPos)
+                fakeLocationCircle = createStationaryLocationCircle(startPos)
             }
 
-            // Restart route simulator
+            // Restart route simulator with GlobalScope for background execution
             routeSimulator = RouteSimulator(
                 points = routePoints,
                 speedKmh = currentSpeed,
                 updateIntervalMs = 250L, // Optimal balance for smooth + stable GPS
-                scope = lifecycleScope
+                scope = GlobalScope // Use GlobalScope to continue running in background
             )
 
             routeSimulator?.start(
@@ -1265,9 +1491,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                         android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
                         lastGpsUpdateTime = currentTime
 
-                        // Update UI elements
+                        // Track current navigation position for pause/stop functionality
+                        currentNavigationPosition = position
+
+                        // Update fake location circle to show current GPS position
                         fakeLocationCircle?.center = position
-                        fakeLocationCenterDot?.center = position
+                        fakeLocationCenterDot?.position = position
+                        // Let Google Maps blue dot handle position visualization
 
                         // Update completed path (gray polyline)
                         updateCompletedPath(position)
@@ -1308,8 +1538,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isDriving = false
         isPaused = false
 
-        // Get the current position from the fake location circle
-        val currentPosition = fakeLocationCircle?.center
+        // Get the current position from tracked navigation position
+        val currentPosition = currentNavigationPosition
 
         // Clear route and route-related markers
         routePolyline?.remove()
@@ -1342,9 +1572,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             currentFakeLocationPos = currentPosition
             viewModel.update(true, currentPosition.latitude, currentPosition.longitude)
 
-            // Keep the fake location circle (already exists from navigation)
-            // Update to stationary location circle (cyan)
-            fakeLocationCircle?.remove()
+            // Create fake location circle at pause position (since navigation stopped)
             fakeLocationCircle = createStationaryLocationCircle(currentPosition)
 
             updateSetLocationButton()
@@ -1359,6 +1587,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Restore getFakeLocation button since GPS is now set at pause position
         binding.getFakeLocation.visibility = View.VISIBLE
+
+        // Restore set/unset location button since navigation stopped
+        binding.setLocationButton.visibility = View.VISIBLE
 
         showToast("Đã dừng. GPS được set tại vị trí tạm dừng")
     }

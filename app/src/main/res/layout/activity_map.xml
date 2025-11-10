@@ -287,24 +287,148 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Bottom Action Button -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/action_button"
-            style="@style/Widget.Material3.Button.ElevatedButton"
+        <!-- Route Loading Card (shown when fetching route) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/route_loading_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp"
+            android:elevation="8dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:gravity="center">
+
+                <ProgressBar
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/route_loading_progress_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Đang tìm tuyến đường..."
+                    android:textSize="16sp"
+                    android:gravity="center" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Route Error Card (shown when route finding fails) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/route_error_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp"
+            android:elevation="8dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="#FFEBEE">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Lỗi tìm tuyến đường"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#C62828"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/route_error_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="14sp"
+                    android:textColor="#D32F2F"
+                    android:layout_marginBottom="12dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="end">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/route_error_cancel_button"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Huỷ"
+                        android:layout_marginEnd="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/route_retry_button"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Thử lại" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Bottom Action Buttons -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="32dp"
-            android:text="Chỉ đường"
-            android:textSize="16sp"
-            android:paddingTop="16dp"
-            android:paddingBottom="16dp"
-            android:elevation="8dp"
-            android:visibility="gone"
-            app:icon="@drawable/ic_baseline_directions_24"
-            app:iconGravity="start" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/action_button"
+                style="@style/Widget.Material3.Button.ElevatedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="Chỉ đường"
+                android:textSize="16sp"
+                android:paddingTop="16dp"
+                android:paddingBottom="16dp"
+                android:elevation="8dp"
+                android:visibility="gone"
+                app:icon="@drawable/ic_baseline_directions_24"
+                app:iconGravity="start" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cancel_route_button"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Huỷ"
+                android:visibility="gone"
+                app:icon="@drawable/ic_stop" />
+
+        </LinearLayout>
+
+        <!-- Old Bottom Action Button (kept for reference, will be replaced above) -->
 
         <!-- Floating Action Buttons (Right Side) -->
         <com.google.android.material.button.MaterialButton
