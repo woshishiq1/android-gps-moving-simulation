@@ -65,8 +65,8 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun update(start: Boolean, la: Double, ln: Double)  {
-        prefManger.update(start,la,ln)
+    fun update(start: Boolean, la: Double, ln: Double, bearing: Float = 0F, speed: Float = 0F)  {
+        prefManger.update(start, la, ln, bearing, speed)
     }
 
     private val _response = MutableLiveData<Long>()

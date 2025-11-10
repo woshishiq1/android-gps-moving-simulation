@@ -30,6 +30,18 @@ class Xshare {
         0.0000000.toFloat()
     ).toDouble()
 
+    val getBearing : Float
+    get() = pref().getFloat(
+        "bearing",
+        0F
+    )
+
+    val getSpeed : Float
+    get() = pref().getFloat(
+        "speed",
+        0F
+    )
+
     val isHookedSystem : Boolean
     get() = pref().getBoolean(
         "system_hooked",

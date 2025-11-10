@@ -7,54 +7,56 @@ import kotlinx.coroutines.*
  * RouteSimulator - Enhanced GPS movement simulation for route navigation
  * Simulates movement along a route with configurable speed and realistic GPS behavior
  *
- * Anti-detection features:
- * - Variable GPS update intervals (180-320ms)
- * - Realistic GPS jitter and timing variance
- * - Natural GPS behavior patterns
+ * Features:
+ * - Smooth GPS updates (100ms intervals, 10 updates/second)
+ * - Realistic GPS jitter (1-2 meters) to prevent GPS loss detection
+ * - Natural GPS behavior patterns that mimic real mobile devices
+ * - Prevents route cutting at turns with accurate interpolation
  */
 class RouteSimulator(
     private val points: List<LatLng>,
     private var speedKmh: Double = 45.0, // Default motorbike speed
-    private val updateIntervalMs: Long = 250L, // Base interval - will be randomized
+    private val updateIntervalMs: Long = 100L, // Fast updates for smooth movement
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
 
     private var job: Job? = null
     private var paused: Boolean = false
 
-    // Anti-detection parameters
-    private val minUpdateInterval = 228L // Safe min GPS update interval (increased from 180ms)
-    private val maxUpdateInterval = 350L // Max GPS update interval (increased proportionally)
+    // GPS update parameters - optimized for smooth movement
+    private val minUpdateInterval = 80L  // Min GPS update interval (80ms)
+    private val maxUpdateInterval = 120L // Max GPS update interval (120ms)
 
     /**
-     * Generate realistic GPS update interval with natural variance
-     * Real GPS devices don't update at perfectly consistent intervals
-     * Safe range: 228-350ms to prevent GPS loss
+     * Generate realistic GPS update interval with minimal variance
+     * Keeps intervals tight for smooth movement
+     * Range: 80-120ms for smooth updates
      */
     private fun getRealisticUpdateInterval(): Long {
-        // Most updates around base interval, with some outliers
+        // Most updates around 100ms, with slight variance
         val random = Math.random()
         return when {
-            random < 0.7 -> { // 70% normal updates (248-288ms)
-                (minUpdateInterval + 20 + Math.random() * 40).toLong()
+            random < 0.8 -> { // 80% normal updates (95-105ms)
+                (95 + Math.random() * 10).toLong()
             }
-            random < 0.9 -> { // 20% faster updates (228-248ms)
-                (minUpdateInterval + Math.random() * 20).toLong()
+            random < 0.95 -> { // 15% faster updates (80-95ms)
+                (minUpdateInterval + Math.random() * 15).toLong()
             }
-            else -> { // 10% slower updates (288-350ms)
-                (maxUpdateInterval - 62 + Math.random() * 62).toLong()
+            else -> { // 5% slower updates (105-120ms)
+                (105 + Math.random() * 15).toLong()
             }
         }
     }
 
     /**
-     * Add realistic GPS jitter with variable intensity
-     * Real GPS has different accuracy depending on conditions
+     * Add realistic GPS jitter for natural behavior
+     * Jitter range: 1-3 meters (realistic for mobile GPS)
+     * This prevents GPS loss and makes movement look natural
      */
     private fun addRealisticGpsJitter(position: LatLng): LatLng {
-        // Variable GPS accuracy simulation
-        val baseJitter = 0.000003 // ~0.3m base
-        val jitterMultiplier = 0.5 + Math.random() * 1.0 // 0.5x to 1.5x variance
+        // Realistic GPS jitter - approximately 1-3 meters (natural mobile GPS accuracy)
+        val baseJitter = 0.000015 // ~1.5m base (1 degree latitude ≈ 111km)
+        val jitterMultiplier = 0.7 + Math.random() * 0.6 // 0.7x to 1.3x variance (1-2m range)
 
         val jitterLat = (Math.random() - 0.5) * baseJitter * jitterMultiplier
         val jitterLng = (Math.random() - 0.5) * baseJitter * jitterMultiplier
@@ -74,42 +76,59 @@ class RouteSimulator(
                 val a = points[idx]
                 val b = points[idx + 1]
                 val segMeters = PolylineUtils.haversineDistanceMeters(a, b)
-                if (segMeters <= 0.0) {
+                
+                // Skip very short segments to avoid calculation issues
+                if (segMeters <= 0.1) {
                     idx++
                     continue
                 }
 
                 var traveled = 0.0
+                
                 while (traveled < segMeters && isActive) {
                     if (paused) {
                         delay(updateIntervalMs)
                         continue
                     }
 
-                    // Generate realistic update interval for anti-detection
+                    // Generate realistic update interval
                     val currentUpdateInterval = getRealisticUpdateInterval()
 
                     // Calculate current speed and step distance (allows real-time speed changes)
                     val currentSpeedMs = speedKmh * 1000.0 / 3600.0
                     val stepMeters = currentSpeedMs * (currentUpdateInterval.toDouble() / 1000.0)
 
-                    val frac = (traveled / segMeters).coerceIn(0.0, 1.0)
-                    val lat = a.latitude + (b.latitude - a.latitude) * frac
-                    val lng = a.longitude + (b.longitude - a.longitude) * frac
+                    // Calculate fraction - ensure we don't overshoot the segment
+                    val nextTraveled = traveled + stepMeters
+                    val actualFrac = if (nextTraveled >= segMeters) {
+                        1.0 // Exactly at point B
+                    } else {
+                        (traveled / segMeters).coerceIn(0.0, 1.0)
+                    }
+
+                    // Linear interpolation between points A and B
+                    val lat = a.latitude + (b.latitude - a.latitude) * actualFrac
+                    val lng = a.longitude + (b.longitude - a.longitude) * actualFrac
                     val position = LatLng(lat, lng)
 
-                    // Add realistic GPS jitter with variable intensity
+                    // Add minimal GPS jitter for realism
                     val gpsPosition = addRealisticGpsJitter(position)
                     onPosition(gpsPosition)
 
+                    // Move forward
                     traveled += stepMeters
-                    // Use variable interval for realistic GPS timing
+                    
+                    // Use variable interval for smooth GPS timing
                     delay(currentUpdateInterval)
                 }
 
-                // Ensure we arrive at exact destination point
-                onPosition(addRealisticGpsJitter(b))
+                // Move to next segment
                 idx++
+            }
+
+            // Ensure we end exactly at the last point
+            if (points.isNotEmpty()) {
+                onPosition(addRealisticGpsJitter(points.last()))
             }
 
             // Finished route

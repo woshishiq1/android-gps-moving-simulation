@@ -24,6 +24,8 @@ object LocationHook {
 
     var newlat: Double = 45.0000
     var newlng: Double = 0.0000
+    var bearing: Float = 0F
+    var speed: Float = 0F
     private const val pi = 3.14159265359
     private var accuracy: Float = 0.0f
     private val rand: Random = Random()
@@ -48,6 +50,8 @@ object LocationHook {
             newlng =
                 if (settings.isRandomPosition) settings.getLng + (dlng * 180.0 / pi) else settings.getLng
             accuracy = settings.accuracy!!.toFloat()
+            bearing = settings.getBearing
+            speed = settings.getSpeed
 
         } catch (e: Exception) {
             Timber.tag("GPS Setter")
@@ -66,7 +70,7 @@ object LocationHook {
 
         if (lpparam.packageName == "android") { XposedBridge.log("Hooking system server")
         if (settings.isStarted && (settings.isHookedSystem && !ignorePkg.contains(lpparam.packageName))) {
-            if (System.currentTimeMillis() - mLastUpdated > 200) {
+            if (System.currentTimeMillis() - mLastUpdated > 50) {
                 updateLocation()
             }
 
@@ -87,7 +91,8 @@ object LocationHook {
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
-                            location.speed = 0F
+                            location.speed = speed
+                            location.bearing = bearing
                             location.accuracy = accuracy
                             location.speedAccuracyMetersPerSecond = 0F
                             param.result = location
@@ -130,7 +135,7 @@ object LocationHook {
                                 location = Location(originLocation.provider)
                                 location.time = originLocation.time
                                 location.accuracy = accuracy
-                                location.bearing = originLocation.bearing
+                                location.bearing = bearing
                                 location.bearingAccuracyDegrees = originLocation.bearingAccuracyDegrees
                                 location.elapsedRealtimeNanos = originLocation.elapsedRealtimeNanos
                                 location.verticalAccuracyMeters = originLocation.verticalAccuracyMeters
@@ -139,9 +144,9 @@ object LocationHook {
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
-                            location.speed = 0F
+                            location.speed = speed
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}")
+                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false
@@ -171,7 +176,8 @@ object LocationHook {
                                     location.latitude = newlat
                                     location.longitude = newlng
                                     location.altitude = 0.0
-                                    location.speed = 0F
+                                    location.speed = speed
+                                    location.bearing = bearing
                                     location.accuracy = accuracy
                                     location.speedAccuracyMetersPerSecond = 0F
                                     param.result = location
@@ -211,7 +217,7 @@ object LocationHook {
                                 location = Location(originLocation.provider)
                                 location.time = originLocation.time
                                 location.accuracy = accuracy
-                                location.bearing = originLocation.bearing
+                                location.bearing = bearing
                                 location.bearingAccuracyDegrees = originLocation.bearingAccuracyDegrees
                                 location.elapsedRealtimeNanos = originLocation.elapsedRealtimeNanos
                                 location.verticalAccuracyMeters = originLocation.verticalAccuracyMeters
@@ -220,9 +226,9 @@ object LocationHook {
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
-                            location.speed = 0F
+                            location.speed = speed
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}")
+                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false
@@ -242,7 +248,7 @@ object LocationHook {
                 "android.location.Location",
                 lpparam.classLoader
             )
-            val interval = 80 // 200
+            val interval = 50L // Reduce throttle to 50ms for smooth updates
 
             for (method in LocationClass.declaredMethods) {
                 if (method.name == "getLatitude") {
@@ -287,6 +293,68 @@ object LocationHook {
                             }
                         }
                     )
+                } else if (method.name == "getBearing") {
+                    XposedBridge.hookMethod(
+                        method,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                if (System.currentTimeMillis() - mLastUpdated > interval) {
+                                    updateLocation()
+                                }
+                                if (settings.isStarted && !ignorePkg.contains(lpparam.packageName)) {
+                                    param.result = bearing
+                                }
+                            }
+                        }
+                    )
+                } else if (method.name == "getSpeed") {
+                    XposedBridge.hookMethod(
+                        method,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                if (System.currentTimeMillis() - mLastUpdated > interval) {
+                                    updateLocation()
+                                }
+                                if (settings.isStarted && !ignorePkg.contains(lpparam.packageName)) {
+                                    param.result = speed
+                                }
+                            }
+                        }
+                    )
+                } else if (method.name == "hasBearing") {
+                    XposedBridge.hookMethod(
+                        method,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                if (settings.isStarted && !ignorePkg.contains(lpparam.packageName)) {
+                                    param.result = true // Always return true when GPS is set
+                                }
+                            }
+                        }
+                    )
+                } else if (method.name == "hasSpeed") {
+                    XposedBridge.hookMethod(
+                        method,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                if (settings.isStarted && !ignorePkg.contains(lpparam.packageName)) {
+                                    param.result = true // Always return true when GPS is set
+                                }
+                            }
+                        }
+                    )
+                } else if (method.name == "getTime") {
+                    XposedBridge.hookMethod(
+                        method,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                if (settings.isStarted && !ignorePkg.contains(lpparam.packageName)) {
+                                    // Return current time to indicate fresh GPS data
+                                    param.result = System.currentTimeMillis()
+                                }
+                            }
+                        }
+                    )
                 }
             }
 
@@ -311,7 +379,7 @@ object LocationHook {
                                 location = Location(originLocation.provider)
                                 location.time = originLocation.time
                                 location.accuracy = accuracy
-                                location.bearing = originLocation.bearing
+                                location.bearing = bearing
                                 location.bearingAccuracyDegrees = originLocation.bearingAccuracyDegrees
                                 location.elapsedRealtimeNanos = originLocation.elapsedRealtimeNanos
                                 location.verticalAccuracyMeters = originLocation.verticalAccuracyMeters
@@ -320,9 +388,9 @@ object LocationHook {
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
-                            location.speed = 0F
+                            location.speed = speed
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}")
+                            XposedBridge.log("GS(app): lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false
@@ -353,9 +421,11 @@ object LocationHook {
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
-                            location.speed = 0F
+                            location.speed = speed
+                            location.bearing = bearing
+                            location.accuracy = accuracy
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}")
+                            XposedBridge.log("GS(getLastKnown): lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false

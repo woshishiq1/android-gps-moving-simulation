@@ -18,6 +18,8 @@ object PrefManager   {
     private const val START = "start"
     private const val LATITUDE = "latitude"
     private const val LONGITUDE = "longitude"
+    private const val BEARING = "bearing"
+    private const val SPEED = "speed"
     private const val HOOKED_SYSTEM = "system_hooked"
     private const val RANDOM_POSITION = "random_position"
     private const val ACCURACY_SETTING = "accuracy_level"
@@ -25,6 +27,8 @@ object PrefManager   {
     private const val DARK_THEME = "dark_theme"
     private const val DISABLE_UPDATE = "update_disabled"
     private const val ENABLE_JOYSTICK = "joystick_enabled"
+    private const val MAPBOX_API_KEY = "mapbox_api_key"
+    private const val VEHICLE_TYPE = "vehicle_type"
 
 
     private val pref: SharedPreferences by lazy {
@@ -54,6 +58,12 @@ object PrefManager   {
     val getLng : Double
         get() = pref.getFloat(LONGITUDE, -74.0060F).toDouble()
 
+    val getBearing : Float
+        get() = pref.getFloat(BEARING, 0F)
+
+    val getSpeed : Float
+        get() = pref.getFloat(SPEED, 0F)
+
     var isSystemHooked : Boolean
         get() = pref.getBoolean(HOOKED_SYSTEM, false)
         set(value) { pref.edit().putBoolean(HOOKED_SYSTEM,value).apply() }
@@ -82,11 +92,21 @@ object PrefManager   {
         get() = pref.getBoolean(ENABLE_JOYSTICK, false)
         set(value) = pref.edit().putBoolean(ENABLE_JOYSTICK, value).apply()
 
-    fun update(start:Boolean, la: Double, ln: Double) {
+    var mapBoxApiKey: String?
+        get() = pref.getString(MAPBOX_API_KEY, null)
+        set(value) = pref.edit().putString(MAPBOX_API_KEY, value).apply()
+
+    var vehicleType: String
+        get() = pref.getString(VEHICLE_TYPE, "MOTORBIKE") ?: "MOTORBIKE"
+        set(value) = pref.edit().putString(VEHICLE_TYPE, value).apply()
+
+    fun update(start:Boolean, la: Double, ln: Double, bearing: Float = 0F, speed: Float = 0F) {
         runInBackground {
             val prefEditor = pref.edit()
             prefEditor.putFloat(LATITUDE, la.toFloat())
             prefEditor.putFloat(LONGITUDE, ln.toFloat())
+            prefEditor.putFloat(BEARING, bearing)
+            prefEditor.putFloat(SPEED, speed)
             prefEditor.putBoolean(START, start)
             prefEditor.apply()
         }

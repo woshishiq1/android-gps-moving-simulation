@@ -37,45 +37,6 @@
                 android:orientation="vertical"
                 android:padding="4dp">
 
-                <!-- Destination Search Box (Always visible) -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="8dp">
-
-                    <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@android:drawable/ic_menu_search"
-                        android:layout_marginStart="8dp"
-                        android:layout_marginEnd="12dp"
-                        app:tint="?attr/colorPrimary" />
-
-                    <EditText
-                        android:id="@+id/destination_search"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:hint="Tìm kiếm địa điểm"
-                        android:background="@android:color/transparent"
-                        android:imeOptions="actionSearch"
-                        android:inputType="text"
-                        android:maxLines="1"
-                        android:textSize="16sp" />
-
-                    <ImageButton
-                        android:id="@+id/clear_search"
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
-                        android:src="@android:drawable/ic_menu_close_clear_cancel"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:visibility="gone"
-                        android:contentDescription="Clear" />
-
-                </LinearLayout>
-
                 <!-- Start Location Search Box (Shown when in route mode) -->
                 <LinearLayout
                     android:id="@+id/start_search_container"
@@ -100,6 +61,36 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:hint="Điểm bắt đầu"
+                        android:background="@android:color/transparent"
+                        android:imeOptions="actionSearch"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textSize="16sp" />
+
+                </LinearLayout>
+
+                <!-- Destination Search Box (Always visible) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="8dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_search"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="12dp"
+                        app:tint="?attr/colorPrimary" />
+
+                    <EditText
+                        android:id="@+id/destination_search"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="Điểm đến"
                         android:background="@android:color/transparent"
                         android:imeOptions="actionSearch"
                         android:inputType="text"
@@ -149,6 +140,44 @@
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Swap Button (outside search card, shown when both markers exist) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/swap_button_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/search_card"
+            android:layout_alignStart="@id/search_card"
+            android:layout_marginTop="8dp"
+            android:layout_marginStart="0dp"
+            android:elevation="4dp"
+            android:visibility="gone"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp">
+
+                <ImageButton
+                    android:id="@+id/swap_locations_button"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@android:drawable/ic_menu_revert"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Đảo ngược điểm đầu và điểm cuối"
+                    app:tint="?attr/colorPrimary" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Map Container -->
         <include
             android:id="@+id/map_container"
@@ -167,26 +196,48 @@
             android:layout_marginBottom="16dp"
             android:elevation="8dp"
             android:visibility="gone"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="12dp"
             app:cardElevation="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="12dp">
 
-                <!-- Speed Control -->
-                <TextView
-                    android:id="@+id/speed_label"
+                <!-- Distance & Speed Row - Compact horizontal layout -->
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Tốc độ: 40 km/h"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:gravity="center"
-                    android:layout_marginBottom="8dp"/>
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
 
+                    <!-- Distance Display -->
+                    <TextView
+                        android:id="@+id/distance_label"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="0.00km/0.00km"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorPrimary"
+                        android:gravity="start"/>
+
+                    <!-- Speed Display -->
+                    <TextView
+                        android:id="@+id/speed_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="40 km/h"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:gravity="end"/>
+
+                </LinearLayout>
+
+                <!-- Compact Speed Slider -->
                 <com.google.android.material.slider.Slider
                     android:id="@+id/speed_slider"
                     android:layout_width="match_parent"
@@ -194,47 +245,66 @@
                     android:valueFrom="0"
                     android:valueTo="200"
                     android:value="40"
-                    android:stepSize="5"/>
+                    android:stepSize="5"
+                    android:layout_marginTop="-8dp"
+                    android:layout_marginBottom="-8dp"/>
 
-                <!-- Pause/Resume/Stop Buttons -->
+                <!-- Compact Control Buttons -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center"
-                    android:layout_marginTop="8dp">
+                    android:layout_marginTop="4dp">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/pause_button"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="40dp"
                         android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="6dp"
                         android:text="Tạm dừng"
-                        app:icon="@drawable/ic_pause"/>
+                        android:textSize="12sp"
+                        android:minHeight="40dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        app:icon="@drawable/ic_pause"
+                        app:iconSize="16dp"
+                        app:iconPadding="4dp"/>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/resume_button"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="40dp"
                         android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="6dp"
                         android:text="Tiếp tục"
+                        android:textSize="12sp"
+                        android:minHeight="40dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
                         android:visibility="gone"
-                        app:icon="@drawable/ic_play"/>
+                        app:icon="@drawable/ic_play"
+                        app:iconSize="16dp"
+                        app:iconPadding="4dp"/>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/stop_button"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="40dp"
                         android:layout_weight="1"
-                        android:layout_marginStart="8dp"
                         android:text="Dừng"
+                        android:textSize="12sp"
+                        android:minHeight="40dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
                         android:visibility="gone"
-                        app:icon="@drawable/ic_stop"/>
+                        app:icon="@drawable/ic_stop"
+                        app:iconSize="16dp"
+                        app:iconPadding="4dp"/>
 
                 </LinearLayout>
 
@@ -506,6 +576,27 @@
             android:visibility="gone"
             android:contentDescription="Bật/tắt theo dõi camera"
             app:icon="@android:drawable/ic_menu_camera"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="24dp" />
+            
+        <!-- Routing Settings Button (Hidden - use drawer menu instead) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/routingSettingsButton"
+            style="@style/Widget.Material3.FloatingActionButton.Surface"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_alignParentEnd="true"
+            android:layout_above="@id/cameraFollowToggle"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone"
+            android:insetLeft="0dp"
+            android:insetTop="0dp"
+            android:insetRight="0dp"
+            android:insetBottom="0dp"
+            android:contentDescription="Cài đặt tìm đường"
+            app:icon="@drawable/ic_baseline_directions_24"
             app:iconGravity="textStart"
             app:iconPadding="0dp"
             app:iconSize="24dp" />

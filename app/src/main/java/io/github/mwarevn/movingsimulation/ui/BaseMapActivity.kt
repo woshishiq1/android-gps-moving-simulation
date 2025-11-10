@@ -182,6 +182,12 @@ abstract class BaseMapActivity: AppCompatActivity() {
 
         binding.navView.setNavigationItemSelectedListener {
             when(it.itemId){
+                R.id.routing_settings -> {
+                    // Open routing settings dialog
+                    RoutingSettingsDialog.show(this) {
+                        showToast("Đã lưu cài đặt tìm đường")
+                    }
+                }
                 R.id.get_favorite -> {
                     openFavoriteListDialog()
                 }

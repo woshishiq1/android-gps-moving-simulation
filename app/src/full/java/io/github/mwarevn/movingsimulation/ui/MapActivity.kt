@@ -23,7 +23,10 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.*
 import io.github.mwarevn.movingsimulation.R
 import io.github.mwarevn.movingsimulation.network.OsrmClient
+import io.github.mwarevn.movingsimulation.network.RoutingService
+import io.github.mwarevn.movingsimulation.network.VehicleType
 import io.github.mwarevn.movingsimulation.utils.PolylineUtils
+import io.github.mwarevn.movingsimulation.utils.PrefManager
 import io.github.mwarevn.movingsimulation.utils.RouteSimulator
 import io.github.mwarevn.movingsimulation.utils.ext.showToast
 import kotlinx.coroutines.*
@@ -71,6 +74,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var isDriving = false
     private var isPaused = false
     private var currentSpeed = 40.0 // Default motorbike speed
+
+    // Distance tracking
+    private var totalRouteDistanceKm = 0.0 // Total route distance in kilometers
+    private var traveledDistanceKm = 0.0 // Distance traveled so far in kilometers
+    private var lastDistancePosition: LatLng? = null // Last position for distance calculation
 
     // Movement tracking
     private var currentPositionMarker: Marker? = null
@@ -122,6 +130,51 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     // Route loading state
     private var isLoadingRoute = false
     private var routeLoadError: String? = null
+
+    // Route cache to avoid redundant API calls when swapping
+    private data class RouteCacheKey(
+        val startLat: Double,
+        val startLng: Double,
+        val destLat: Double,
+        val destLng: Double,
+        val vehicleType: VehicleType
+    ) {
+        companion object {
+            // Helper to create key from markers
+            fun fromMarkers(start: LatLng, dest: LatLng, vehicleType: VehicleType): RouteCacheKey {
+                return RouteCacheKey(
+                    startLat = start.latitude,
+                    startLng = start.longitude,
+                    destLat = dest.latitude,
+                    destLng = dest.longitude,
+                    vehicleType = vehicleType
+                )
+            }
+        }
+    }
+
+    private data class RouteCacheEntry(
+        val routePoints: List<LatLng>,
+        val serviceName: String,
+        val isFallback: Boolean,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val routeCache = mutableMapOf<RouteCacheKey, RouteCacheEntry>()
+    private val CACHE_EXPIRY_MS = 30 * 60 * 1000L // 30 minutes cache
+
+    // Routing service (hybrid MapBox + OSRM)
+    // Always get fresh instance with latest API key from preferences
+    private val routingService: RoutingService
+        get() {
+            val apiKey = PrefManager.mapBoxApiKey
+            return OsrmClient.createRoutingService(mapBoxApiKey = apiKey)
+        }
+
+    // Current vehicle type (can be changed by user later)
+    private var currentVehicleType: VehicleType
+        get() = VehicleType.fromString(PrefManager.vehicleType)
+        set(value) { PrefManager.vehicleType = value.name }
 
     /**
      * Create a circular bitmap icon for center dot that maintains size at all zoom levels
@@ -272,6 +325,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 if (!hasSelectedStartPoint && destMarker != null) {
                     // First click in PLAN mode - set start point
                     setStartMarkerWithSelection(position)
+                    // Button visibility will be updated in setStartMarker()
                     showToast("Đã chọn điểm bắt đầu. Kéo thả để điều chỉnh chính xác, sau đó nhấn 'Bắt đầu di chuyển'")
                 } else if (hasSelectedStartPoint) {
                     // After first click - only allow drag/drop for fine-tuning
@@ -289,25 +343,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     private fun setupSearchBoxes() {
         // Destination search (always visible)
-        binding.destinationSearch.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val text = s.toString().trim()
-                binding.clearSearch.visibility = if (text.isNotEmpty()) View.VISIBLE else View.GONE
-
-                if (text.length >= 3) {
-                    searchJob?.cancel()
-                    searchJob = lifecycleScope.launch {
-                        delay(800) // Debounce
-                        searchLocation(text) { latLng ->
-                            setDestinationMarker(latLng)
-                        }
-                    }
-                }
-            }
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        })
-
+        // Search only when user presses Enter/Done on keyboard
         binding.destinationSearch.setOnEditorActionListener { v, _, _ ->
             val text = v.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -320,30 +356,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             true
         }
 
-        // Clear search button
-        binding.clearSearch.setOnClickListener {
-            binding.destinationSearch.text.clear()
-            clearDestinationMarker()
-        }
-
         // Start location search (shown in route mode)
-        binding.startSearch.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val text = s.toString().trim()
-                if (text.length >= 3) {
-                    searchJob?.cancel()
-                    searchJob = lifecycleScope.launch {
-                        delay(800)
-                        searchLocation(text) { latLng ->
-                            setStartMarkerWithSelection(latLng)
-                        }
-                    }
-                }
-            }
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        })
-
+        // Search only when user presses Enter/Done on keyboard
         binding.startSearch.setOnEditorActionListener { v, _, _ ->
             val text = v.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -469,7 +483,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 val actualSpeed = if (isDriving && newSpeed <= 0) 1.0 else newSpeed
 
                 currentSpeed = actualSpeed
-                binding.speedLabel.text = "Tốc độ: ${actualSpeed.toInt()} km/h"
+                binding.speedLabel.text = "${actualSpeed.toInt()} km/h"
 
                 android.util.Log.d("MapActivity", "Speed changed to: $actualSpeed km/h (isDriving: $isDriving, isPaused: $isPaused)")
 
@@ -478,8 +492,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     routeSimulator?.setSpeedKmh(actualSpeed)
                     android.util.Log.d("MapActivity", "RouteSimulator speed updated to: $actualSpeed km/h")
                 }
+                }
             }
-        }
+
 
         // Pause button
         binding.pauseButton.setOnClickListener {
@@ -529,7 +544,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.useCurrentLocationContainer.setOnClickListener {
             if (currentFakeLocationPos != null) {
                 setStartMarkerWithSelection(currentFakeLocationPos!!)
-                binding.useCurrentLocationContainer.visibility = View.GONE
+                // Update button visibility (will hide since start point now matches fake GPS)
+                updateUseCurrentLocationButtonVisibility()
                 // showToast("Đã chọn vị trí hiện tại làm điểm bắt đầu")
             }
         }
@@ -547,6 +563,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Cancel route button (next to start button)
         binding.cancelRouteButton.setOnClickListener {
             cancelRoutePlan()
+        }
+
+        // Swap locations button (exchange start and destination)
+        binding.swapLocationsButton.setOnClickListener {
+            swapStartAndDestination()
         }
 
         android.util.Log.d("MapActivity", "========== setupButtons() END ==========")
@@ -578,21 +599,103 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
     }
 
+    /**
+     * Get full address string from coordinates (reverse geocoding)
+     * Returns complete address with all available components
+     * For named places, includes both name and street address for clarity
+     */
+    private suspend fun getAddressFromLocation(latLng: LatLng): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                val geocoder = Geocoder(this@MapActivity, Locale.getDefault())
+                val addresses = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
+
+                if (!addresses.isNullOrEmpty()) {
+                    val address = addresses[0]
+
+                    // Build full address from available components
+                    val addressParts = mutableListOf<String>()
+
+                    // 1. Feature name (if it's a named place, not just coordinates)
+                    val featureName = address.featureName?.takeIf {
+                        it.isNotBlank() && !it.matches(Regex("^[\\d,\\.\\s]+$"))
+                    }
+
+                    // 2. Street address (house number + street name)
+                    val streetAddress = buildString {
+                        address.subThoroughfare?.let { append("$it ") } // House number
+                        address.thoroughfare?.let { append(it) } // Street name
+                    }.trim()
+
+                    // If we have both feature name and street address, combine them
+                    // e.g., "Mộc Hương, 89 Lê Đức Thọ" or "Sunsquare, 11/66/132 Cầu Diễn"
+                    if (!featureName.isNullOrBlank() && streetAddress.isNotBlank()) {
+                        addressParts.add("$featureName, $streetAddress")
+                    } else {
+                        // Add them separately if only one exists
+                        featureName?.let { addressParts.add(it) }
+                        if (streetAddress.isNotBlank()) {
+                            addressParts.add(streetAddress)
+                        }
+                    }
+
+                    // 3. Sub-locality (Phường)
+                    address.subLocality?.let {
+                        if (it.isNotBlank()) addressParts.add(it)
+                    }
+
+                    // 4. Locality (Quận/Huyện)
+                    address.locality?.let {
+                        if (it.isNotBlank() && it != address.subLocality) addressParts.add(it)
+                    }
+
+                    // 5. Administrative area (Tỉnh/Thành phố)
+                    address.adminArea?.let {
+                        if (it.isNotBlank()) addressParts.add(it)
+                    }
+
+                    // 6. Country (if available)
+                    address.countryName?.let {
+                        if (it.isNotBlank()) addressParts.add(it)
+                    }
+
+                    // Join all parts with comma separator
+                    if (addressParts.isNotEmpty()) {
+                        return@withContext addressParts.joinToString(", ")
+                    }
+                }
+
+                // Fallback: Coordinates
+                "${String.format("%.6f", latLng.latitude)}, ${String.format("%.6f", latLng.longitude)}"
+            } catch (e: Exception) {
+                android.util.Log.e("MapActivity", "Error getting address: ${e.message}")
+                // Fallback: Coordinates
+                "${String.format("%.6f", latLng.latitude)}, ${String.format("%.6f", latLng.longitude)}"
+            }
+        }
+    }
+
     private fun setDestinationMarker(position: LatLng) {
         // Remove old marker
         destMarker?.remove()
 
-        // Add new marker (not draggable during navigation)
+        // Add new marker - only draggable in ROUTE_PLAN mode
         destMarker = mMap.addMarker(
             MarkerOptions()
                 .position(position)
                 .title("Điểm đến")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                .draggable(currentMode != AppMode.NAVIGATION) // Disable dragging during navigation
+                .draggable(currentMode == AppMode.ROUTE_PLAN) // Only draggable in route planning mode
         )
 
         // Move camera
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(position, 16f))
+
+        // Get address and fill into search box
+        lifecycleScope.launch {
+            val address = getAddressFromLocation(position)
+            binding.destinationSearch.setText(address)
+        }
 
         // Show "Chỉ đường" button
         binding.actionButton.apply {
@@ -609,6 +712,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             routePolyline?.remove()
             routePolyline = null
         }
+
+        // Update swap button visibility
+        updateSwapButtonVisibility()
     }
 
     private fun clearDestinationMarker() {
@@ -617,26 +723,41 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.visibility = View.GONE
         currentMode = AppMode.SEARCH
 
+        // Clear destination search text
+        binding.destinationSearch.text.clear()
+
         // Also clear route if exists
         routePolyline?.remove()
         routePolyline = null
         startMarker?.remove()
         startMarker = null
         binding.startSearchContainer.visibility = View.GONE
+
+        // Clear start search text as well
+        binding.startSearch.text.clear()
+
+        // Update swap button visibility
+        updateSwapButtonVisibility()
     }
 
     private fun setStartMarker(position: LatLng) {
         // Remove old marker
         startMarker?.remove()
 
-        // Add new marker (not draggable during navigation)
+        // Add new marker - only draggable in ROUTE_PLAN mode
         startMarker = mMap.addMarker(
             MarkerOptions()
                 .position(position)
                 .title("Điểm bắt đầu")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-                .draggable(currentMode != AppMode.NAVIGATION) // Disable dragging during navigation
+                .draggable(currentMode == AppMode.ROUTE_PLAN) // Only draggable in route planning mode
         )
+
+        // Get address and fill into start search box
+        lifecycleScope.launch {
+            val address = getAddressFromLocation(position)
+            binding.startSearch.setText(address)
+        }
 
         // Move camera to show both markers
         if (destMarker != null) {
@@ -649,6 +770,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             // Draw route
             drawRoute()
         }
+
+        // Update swap button visibility
+        updateSwapButtonVisibility()
+
+        // Update "use current location" button visibility
+        updateUseCurrentLocationButtonVisibility()
     }
 
     /**
@@ -659,6 +786,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         hasSelectedStartPoint = true
     }
 
+    /**
+     * Update swap button visibility based on marker states
+     */
+    private fun updateSwapButtonVisibility() {
+        // Show swap button only when both markers exist and not during navigation
+        val shouldShowSwap = startMarker != null && destMarker != null && currentMode != AppMode.NAVIGATION
+        binding.swapButtonContainer.visibility = if (shouldShowSwap) View.VISIBLE else View.GONE
+    }
+
     private fun enterRoutePlanMode() {
         currentMode = AppMode.ROUTE_PLAN
         hasSelectedStartPoint = false // Reset start point selection state
@@ -667,22 +803,51 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.startSearchContainer.visibility = View.VISIBLE
         binding.startSearch.requestFocus()
 
-        // Show quick use current location button if GPS is set
-        if (isGpsSet && currentFakeLocationPos != null) {
-            binding.useCurrentLocationContainer.visibility = View.VISIBLE
-            binding.useCurrentLocationText.text = "Dùng vị trí hiện tại (${String.format("%.4f", currentFakeLocationPos!!.latitude)}, ${String.format("%.4f", currentFakeLocationPos!!.longitude)})"
-        } else {
-            binding.useCurrentLocationContainer.visibility = View.GONE
-        }
+        // Update marker draggable state (now draggable in ROUTE_PLAN mode)
+        updateMarkersDraggableState()
+
+        // Update quick use current location button visibility
+        updateUseCurrentLocationButtonVisibility()
 
         showToast("Chọn điểm bắt đầu trên bản đồ hoặc nhập địa chỉ")
     }
 
     /**
+     * Update visibility of "use current location" button based on:
+     * - GPS is set (has fake location)
+     * - Start point not selected OR selected but different from fake GPS location
+     */
+    private fun updateUseCurrentLocationButtonVisibility() {
+        if (currentMode != AppMode.ROUTE_PLAN) {
+            binding.useCurrentLocationContainer.visibility = View.GONE
+            return
+        }
+
+        if (isGpsSet && currentFakeLocationPos != null) {
+            // Check if start marker exists and matches fake GPS location
+            val startPos = startMarker?.position
+            val isSameLocation = startPos != null &&
+                Math.abs(startPos.latitude - currentFakeLocationPos!!.latitude) < 0.0001 &&
+                Math.abs(startPos.longitude - currentFakeLocationPos!!.longitude) < 0.0001
+
+            // Show button only if start point not selected or different from fake GPS
+            if (startPos == null || !isSameLocation) {
+                binding.useCurrentLocationContainer.visibility = View.VISIBLE
+                binding.useCurrentLocationText.text = "Dùng vị trí hiện tại (${String.format("%.4f", currentFakeLocationPos!!.latitude)}, ${String.format("%.4f", currentFakeLocationPos!!.longitude)})"
+            } else {
+                binding.useCurrentLocationContainer.visibility = View.GONE
+            }
+        } else {
+            binding.useCurrentLocationContainer.visibility = View.GONE
+        }
+    }
+
+    /**
      * Update marker draggable state based on current mode
+     * Only draggable in ROUTE_PLAN mode
      */
     private fun updateMarkersDraggableState() {
-        val isDraggable = currentMode != AppMode.NAVIGATION
+        val isDraggable = currentMode == AppMode.ROUTE_PLAN
 
         destMarker?.let { marker ->
             // Remove and re-add marker with new draggable state
@@ -711,6 +876,56 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
     }
 
+    /**
+     * Swap start and destination markers
+     */
+    private fun swapStartAndDestination() {
+        if (startMarker == null || destMarker == null) {
+            showToast("Cần có cả 2 điểm để đảo ngược")
+            return
+        }
+
+        // Store current positions
+        val startPos = startMarker!!.position
+        val destPos = destMarker!!.position
+
+        // Store current search texts
+        val startText = binding.startSearch.text.toString()
+        val destText = binding.destinationSearch.text.toString()
+
+        // Remove old markers
+        startMarker?.remove()
+        destMarker?.remove()
+
+        // Create new markers with swapped positions - only draggable in ROUTE_PLAN mode
+        destMarker = mMap.addMarker(
+            MarkerOptions()
+                .position(startPos)
+                .title("Điểm đến")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                .draggable(currentMode == AppMode.ROUTE_PLAN)
+        )
+
+        startMarker = mMap.addMarker(
+            MarkerOptions()
+                .position(destPos)
+                .title("Điểm bắt đầu")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
+                .draggable(currentMode == AppMode.ROUTE_PLAN)
+        )
+
+        // Swap search texts
+        binding.destinationSearch.setText(startText)
+        binding.startSearch.setText(destText)
+
+        // Redraw route with new positions
+        if (currentMode == AppMode.ROUTE_PLAN) {
+            drawRoute()
+        }
+
+        // showToast("Đã đảo ngược điểm bắt đầu và điểm đến")
+    }
+
     private fun drawRoute() {
         if (startMarker == null || destMarker == null) return
 
@@ -728,20 +943,81 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 val start = startMarker!!.position
                 val dest = destMarker!!.position
 
-                // Call OSRM API
-                val coords = "${start.longitude},${start.latitude};${dest.longitude},${dest.latitude}"
-                val route = OsrmClient.service.getRoute(coords)
+                // Create cache key
+                val cacheKey = RouteCacheKey.fromMarkers(start, dest, currentVehicleType)
 
-                if (route.routes.isNullOrEmpty() || route.routes[0].geometry == null) {
-                    // Handle error
-                    routeLoadError = "Không tìm thấy đường đi"
+                // Check cache first
+                val cachedEntry = routeCache[cacheKey]
+                val isCacheValid = cachedEntry != null &&
+                    (System.currentTimeMillis() - cachedEntry.timestamp) < CACHE_EXPIRY_MS
+
+                val result = if (isCacheValid && cachedEntry != null) {
+                    // Use cached route
+                    android.util.Log.d("MapActivity", "✅ Using cached route")
+
+                    // Use the cached route
+                    routePoints = cachedEntry.routePoints
+
+                    // Show notification about cached route
+                    val serviceInfo = if (cachedEntry.isFallback) {
+                        "💾 ${cachedEntry.serviceName} (cache)"
+                    } else {
+                        "💾 ${cachedEntry.serviceName} (cache)"
+                    }
+                    showToast("Đã tìm được đường đi - $serviceInfo")
+
+                    // Return null to skip API call
+                    null
+                } else {
+                    // Call API for new route
+                    android.util.Log.d("MapActivity", "🌐 Fetching route from API")
+
+                    val apiResult = routingService.getRoute(
+                        startLat = start.latitude,
+                        startLng = start.longitude,
+                        endLat = dest.latitude,
+                        endLng = dest.longitude,
+                        vehicleType = currentVehicleType
+                    )
+
+                    if (apiResult != null) {
+                        // Use the first (best) route
+                        routePoints = apiResult.routes[0]
+
+                        // Cache the route
+                        routeCache[cacheKey] = RouteCacheEntry(
+                            routePoints = routePoints,
+                            serviceName = apiResult.serviceName,
+                            isFallback = apiResult.isFallback
+                        )
+
+                        // Clean old cache entries (keep only last 10)
+                        if (routeCache.size > 10) {
+                            val oldestKey = routeCache.entries
+                                .minByOrNull { it.value.timestamp }
+                                ?.key
+                            oldestKey?.let { routeCache.remove(it) }
+                        }
+
+                        // Show notification about which service was used
+                        val serviceInfo = if (apiResult.isFallback) {
+                            "🔄 ${apiResult.serviceName} (dự phòng)"
+                        } else {
+                            "✓ ${apiResult.serviceName}"
+                        }
+                        showToast("Đã tìm được đường đi - $serviceInfo")
+                    }
+
+                    apiResult
+                }
+
+                if (result == null && !isCacheValid) {
+                    // Handle error - all services failed and no cache
+                    routeLoadError = "Không tìm thấy đường đi. Vui lòng thử lại."
                     isLoadingRoute = false
                     showRouteErrorUI()
                     return@launch
                 }
-
-                val geometry = route.routes[0].geometry!!
-                routePoints = PolylineUtils.decode(geometry)
 
                 // Draw polyline
                 routePolyline?.remove()
@@ -812,9 +1088,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         startMarker?.remove()
         startMarker = null
 
+        // Clear start search text
+        binding.startSearch.text.clear()
+
         // Reset to search mode
         currentMode = AppMode.SEARCH
         hasSelectedStartPoint = false
+
+        // Update markers to be non-draggable in search mode
+        updateMarkersDraggableState()
 
         // Hide search containers
         binding.startSearchContainer.visibility = View.GONE
@@ -832,6 +1114,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Show search card
         binding.searchCard.visibility = View.VISIBLE
+
+        // Update swap button visibility (will hide since startMarker is null)
+        updateSwapButtonVisibility()
 
         // showToast("Đã huỷ chỉ đường")
     }
@@ -867,6 +1152,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.visibility = View.GONE
         binding.navigationControlsCard.visibility = View.VISIBLE
 
+        // Hide swap button during navigation
+        binding.swapButtonContainer.visibility = View.GONE
+
         // Reset pause/resume buttons
         binding.pauseButton.visibility = View.VISIBLE
         binding.resumeButton.visibility = View.GONE
@@ -874,9 +1162,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Set initial speed and update label
         currentSpeed = binding.speedSlider.value.toDouble()
-        binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
+        binding.speedLabel.text = "${currentSpeed.toInt()} km/h"
 
-        android.util.Log.d("MapActivity", "Navigation started with speed: $currentSpeed km/h")
+        // Initialize distance tracking
+        totalRouteDistanceKm = calculateTotalRouteDistance(routePoints)
+        traveledDistanceKm = 0.0
+        lastDistancePosition = null
+        updateDistanceLabel()
+
+        android.util.Log.d("MapActivity", "Navigation started with speed: $currentSpeed km/h, total distance: $totalRouteDistanceKm km")
 
         // Hide search inputs
         binding.searchCard.visibility = View.GONE
@@ -900,7 +1194,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = RouteSimulator(
             points = routePoints,
             speedKmh = currentSpeed,
-            updateIntervalMs = 250L, // Optimal balance for smooth + stable GPS
+            updateIntervalMs = 100L, // Fast updates for smooth movement (10 updates/second)
             scope = GlobalScope // Use GlobalScope to continue running in background
         )
 
@@ -916,11 +1210,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                         calculateBearing(prev, position)
                     } ?: 0f
 
-                    // Update GPS location - variable timing approach for anti-detection
+                    // Calculate speed in m/s from current speedKmh
+                    val speedMs = (currentSpeed * 1000.0 / 3600.0).toFloat()
+
+                    // Update GPS location with bearing and speed for smooth rendering
                     viewModel.update(
                         start = true,
                         la = position.latitude,
-                        ln = position.longitude
+                        ln = position.longitude,
+                        bearing = bearing,
+                        speed = speedMs
                     )
 
                     // Log GPS data with timing variance for debugging
@@ -930,6 +1229,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
                     // Track current navigation position for pause/stop functionality
                     currentNavigationPosition = position
+
+                    // Update traveled distance
+                    updateTraveledDistance(position)
 
                     // Update fake location circle to show current GPS position
                     fakeLocationCircle?.center = position
@@ -1078,6 +1380,45 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     /**
+     * Calculate total route distance in kilometers
+     */
+    private fun calculateTotalRouteDistance(points: List<LatLng>): Double {
+        if (points.size < 2) return 0.0
+
+        var totalMeters = 0.0
+        for (i in 0 until points.size - 1) {
+            totalMeters += distanceBetween(points[i], points[i + 1])
+        }
+
+        return totalMeters / 1000.0 // Convert to kilometers
+    }
+
+    /**
+     * Update distance label with current progress
+     */
+    private fun updateDistanceLabel() {
+        val traveledStr = String.format("%.2f", traveledDistanceKm)
+        val totalStr = String.format("%.2f", totalRouteDistanceKm)
+        binding.distanceLabel.text = "${traveledStr}km/${totalStr}km"
+    }
+
+    /**
+     * Update traveled distance based on current position
+     */
+    private fun updateTraveledDistance(currentPosition: LatLng) {
+        lastDistancePosition?.let { lastPos ->
+            val distanceMeters = distanceBetween(lastPos, currentPosition)
+            // Only add distance if movement is significant (> 0.5m) and reasonable (< 100m)
+            // This filters out GPS jitter and prevents huge jumps
+            if (distanceMeters > 0.5 && distanceMeters < 100) {
+                traveledDistanceKm += distanceMeters / 1000.0
+                updateDistanceLabel()
+            }
+        }
+        lastDistancePosition = currentPosition
+    }
+
+    /**
      * Helper function to create a fake location circle marker with center dot
      * @param center The center position of the circle
      * @param strokeColor Stroke color
@@ -1136,6 +1477,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isDriving = false
         isPaused = false
 
+        // Reset speed to default for next trip
+        binding.speedSlider.value = 40f
+        currentSpeed = 40.0
+        binding.speedLabel.text = "40 km/h"
+
         // Hide navigation controls
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
@@ -1193,6 +1539,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         fakeLocationMarker = null
         routePoints = emptyList()
 
+        // Reset speed to default for next trip
+        binding.speedSlider.value = 40f
+        currentSpeed = 40.0
+        binding.speedLabel.text = "40 km/h"
+
         // Reset UI
         currentMode = AppMode.SEARCH
         hasSelectedStartPoint = false // Reset start point selection state
@@ -1242,6 +1593,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         super.onDestroy()
         routeSimulator?.stop()
         searchJob?.cancel()
+
+        // Clear route cache to free memory
+        routeCache.clear()
     }
 
     override fun onPause() {
@@ -1313,7 +1667,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             }
 
             // Update speed label
-            binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
+            binding.speedLabel.text = "${currentSpeed.toInt()} km/h"
 
             // Restore fake location circle if missing
             if (fakeLocationCircle == null && currentNavigationPosition != null) {
@@ -1351,26 +1705,37 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             return
         }
 
+        // Update address in search box when drag ends
+        lifecycleScope.launch {
+            val address = getAddressFromLocation(marker.position)
+            when (marker) {
+                destMarker -> {
+                    binding.destinationSearch.setText(address)
+                    showToast("Điểm đến: $address")
+                }
+                startMarker -> {
+                    binding.startSearch.setText(address)
+                    showToast("Điểm bắt đầu: $address")
+                    // Update "use current location" button visibility when start marker is dragged
+                    updateUseCurrentLocationButtonVisibility()
+                }
+            }
+        }
+
         // Update route only when drag ends to reduce server calls
         if (currentMode == AppMode.ROUTE_PLAN && startMarker != null && destMarker != null) {
             drawRoute()
         }
-
-        // Show final position
-        when (marker) {
-            destMarker -> {
-                showToast("Điểm đến cập nhật tại ${String.format("%.4f", marker.position.latitude)}, ${String.format("%.4f", marker.position.longitude)}")
-            }
-            startMarker -> {
-                showToast("Điểm bắt đầu cập nhật tại ${String.format("%.4f", marker.position.latitude)}, ${String.format("%.4f", marker.position.longitude)}")
-            }
-        }
     }
 
     override fun onMarkerDragStart(marker: Marker) {
-        // Prevent dragging during navigation
-        if (currentMode == AppMode.NAVIGATION) {
-            showToast("Không thể thay đổi điểm đến khi đang di chuyển")
+        // Only allow dragging in ROUTE_PLAN mode
+        if (currentMode != AppMode.ROUTE_PLAN) {
+            if (currentMode == AppMode.NAVIGATION) {
+                showToast("Không thể thay đổi điểm đến khi đang di chuyển")
+            } else if (currentMode == AppMode.SEARCH) {
+                showToast("Vui lòng nhấn 'Chỉ đường' để điều chỉnh vị trí")
+            }
             return
         }
 
@@ -1391,6 +1756,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private fun onFinishNavigation() {
         // Hide completion action bar
         binding.completionActionsCard.visibility = View.GONE
+
+        // Reset speed to default for next trip
+        binding.speedSlider.value = 40f
+        currentSpeed = 40.0
+        binding.speedLabel.text = "40 km/h"
 
         // Clear route and route-related markers, but keep fake location circle and marker
         routePolyline?.remove()
@@ -1463,7 +1833,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             binding.getFakeLocation.visibility = View.GONE
 
             // Ensure speed label shows current speed
-            binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
+            binding.speedLabel.text = "${currentSpeed.toInt()} km/h"
 
             // Create fake location circle at start point to show GPS position
             val startPos = routePoints.firstOrNull()
@@ -1475,7 +1845,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             routeSimulator = RouteSimulator(
                 points = routePoints,
                 speedKmh = currentSpeed,
-                updateIntervalMs = 250L, // Optimal balance for smooth + stable GPS
+                updateIntervalMs = 100L, // Fast updates for smooth movement (10 updates/second)
                 scope = GlobalScope // Use GlobalScope to continue running in background
             )
 
@@ -1489,11 +1859,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                             calculateBearing(prev, position)
                         } ?: 0f
 
-                        // Update GPS location - variable timing approach for anti-detection
+                        // Calculate speed in m/s from current speedKmh
+                        val speedMs = (currentSpeed * 1000.0 / 3600.0).toFloat()
+
+                        // Update GPS location with bearing and speed for smooth rendering
                         viewModel.update(
                             start = true,
                             la = position.latitude,
-                            ln = position.longitude
+                            ln = position.longitude,
+                            bearing = bearing,
+                            speed = speedMs
                         )
 
                         // Log GPS data with timing variance for debugging
@@ -1547,6 +1922,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = null
         isDriving = false
         isPaused = false
+
+        // Reset speed to default for next trip
+        binding.speedSlider.value = 40f
+        currentSpeed = 40.0
+        binding.speedLabel.text = "40 km/h"
 
         // Get the current position from tracked navigation position
         val currentPosition = currentNavigationPosition
