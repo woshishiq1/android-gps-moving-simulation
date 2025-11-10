@@ -39,7 +39,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Route colors
         const val ROUTE_COLOR = "#006eff" // Blue route line
         const val ROUTE_WIDTH = 18f // Route line width
-        const val COMPLETED_ROUTE_COLOR = "#dddddd" // Gray completed path
+        const val COMPLETED_ROUTE_COLOR = "#909090ff" // Gray completed path
 
         // Fake location (stationary) circle colors - Cyan
         const val FAKE_LOCATION_STROKE_COLOR = 0xFF00BCD4.toInt() // Cyan stroke (solid)
@@ -105,6 +105,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         NAVIGATION   // Navigating along route
     }
     private var currentMode = AppMode.SEARCH
+    private var hasSelectedStartPoint = false // Track if start point was clicked (not dragged)
 
     // Search jobs
     private var searchJob: Job? = null
@@ -117,10 +118,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         val lat1 = Math.toRadians(start.latitude)
         val lat2 = Math.toRadians(end.latitude)
         val deltaLng = Math.toRadians(end.longitude - start.longitude)
-        
+
         val y = Math.sin(deltaLng) * Math.cos(lat2)
         val x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng)
-        
+
         var bearing = Math.toDegrees(Math.atan2(y, x))
         if (bearing < 0) {
             bearing += 360.0
@@ -221,25 +222,27 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     override fun onMapClick(position: LatLng) {
         when (currentMode) {
             AppMode.SEARCH -> {
-                // Only allow setting destination if none exists yet
-                if (destMarker == null) {
-                    setDestinationMarker(position)
-                } else {
-                    // Show hint to use drag/drop or search instead
-                    showToast("Kéo thả điểm đánh dấu hoặc tìm kiếm để thay đổi vị trí")
+                // Always allow clicking to set/change destination in SEARCH mode
+                setDestinationMarker(position)
+                if (destMarker != null) {
+                    showToast("Đã chọn điểm đến. Nhấn 'Chỉ đường' để lên kế hoạch route")
                 }
             }
             AppMode.ROUTE_PLAN -> {
-                // Only allow setting start point if destination already exists
-                if (startMarker == null) {
-                    setStartMarker(position)
+                if (!hasSelectedStartPoint && destMarker != null) {
+                    // First click in PLAN mode - set start point
+                    setStartMarkerWithSelection(position)
+                    showToast("Đã chọn điểm bắt đầu. Kéo thả để điều chỉnh chính xác, sau đó nhấn 'Bắt đầu di chuyển'")
+                } else if (hasSelectedStartPoint) {
+                    // After first click - only allow drag/drop for fine-tuning
+                    showToast("Kéo thả điểm đánh dấu để điều chỉnh vị trí chính xác")
                 } else {
-                    // Both markers exist - prevent accidental changes
-                    showToast("Kéo thả điểm đánh dấu hoặc tìm kiếm để thay đổi vị trí")
+                    showToast("Vui lòng chọn điểm đến trước, rồi nhấn 'Chỉ đường'")
                 }
             }
             AppMode.NAVIGATION -> {
-                // Do nothing during navigation
+                // Prevent any map interactions during navigation
+                showToast("Không thể thay đổi điểm đến khi đang di chuyển")
             }
         }
     }
@@ -292,7 +295,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     searchJob = lifecycleScope.launch {
                         delay(800)
                         searchLocation(text) { latLng ->
-                            setStartMarker(latLng)
+                            setStartMarkerWithSelection(latLng)
                         }
                     }
                 }
@@ -306,7 +309,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             if (text.isNotEmpty()) {
                 lifecycleScope.launch {
                     searchLocation(text) { latLng ->
-                        setStartMarker(latLng)
+                        setStartMarkerWithSelection(latLng)
                     }
                 }
             }
@@ -324,9 +327,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.setOnClickListener {
             when (currentMode) {
                 AppMode.SEARCH -> {
-                    // This shouldn't happen with new logic, but fallback
+                    // "Chỉ đường" button: enter route planning mode
                     if (destMarker != null) {
                         enterRoutePlanMode()
+                    } else {
+                        showToast("Vui lòng chọn điểm đến trước")
                     }
                 }
                 AppMode.ROUTE_PLAN -> {
@@ -334,8 +339,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                         // Both markers set - start navigation
                         startNavigation()
                     } else if (destMarker != null && startMarker == null) {
-                        // Only destination set - show start location input
-                        enterRoutePlanMode()
+                        // Only destination set - remind to pick start point
+                        showToast("Vui lòng chọn điểm bắt đầu trên bản đồ")
                     } else {
                         showToast("Vui lòng chọn điểm bắt đầu và điểm đến")
                     }
@@ -417,12 +422,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 val newSpeed = value.toDouble()
                 // Prevent 0 speed during navigation to avoid stopping
                 val actualSpeed = if (isDriving && newSpeed <= 0) 1.0 else newSpeed
-                
+
                 currentSpeed = actualSpeed
                 binding.speedLabel.text = "Tốc độ: ${actualSpeed.toInt()} km/h"
-                
+
                 android.util.Log.d("MapActivity", "Speed changed to: $actualSpeed km/h (isDriving: $isDriving, isPaused: $isPaused)")
-                
+
                 // Update speed in real-time if driving and not paused
                 if (isDriving && !isPaused && routeSimulator != null) {
                     routeSimulator?.setSpeedKmh(actualSpeed)
@@ -478,7 +483,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Quick use current fake location as start point
         binding.useCurrentLocationContainer.setOnClickListener {
             if (currentFakeLocationPos != null) {
-                setStartMarker(currentFakeLocationPos!!)
+                setStartMarkerWithSelection(currentFakeLocationPos!!)
                 binding.useCurrentLocationContainer.visibility = View.GONE
                 // showToast("Đã chọn vị trí hiện tại làm điểm bắt đầu")
             }
@@ -523,7 +528,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 .position(position)
                 .title("Điểm đến")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                .draggable(!isDriving) // Disable dragging during navigation
+                .draggable(currentMode != AppMode.NAVIGATION) // Disable dragging during navigation
         )
 
         // Move camera
@@ -536,12 +541,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             setIconResource(R.drawable.ic_baseline_directions_24)
         }
 
-        // Don't allow map clicks to change destination anymore
-        // User must use drag/drop or search to modify
-        currentMode = AppMode.ROUTE_PLAN
-
-        // Show hint about how to modify markers
-        showToast("Điểm đến đã đặt. Kéo thả điểm đánh dấu hoặc tìm kiếm để thay đổi")
+        // Stay in SEARCH mode - only "Chỉ đường" button switches to PLAN mode
+        // This allows user to keep clicking to change destination
 
         // If in route planning mode and destination changes, clear route
         if (routePolyline != null) {
@@ -574,7 +575,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 .position(position)
                 .title("Điểm bắt đầu")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-                .draggable(!isDriving) // Disable dragging during navigation
+                .draggable(currentMode != AppMode.NAVIGATION) // Disable dragging during navigation
         )
 
         // Move camera to show both markers
@@ -590,8 +591,17 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
     }
 
+    /**
+     * Set start marker and mark that user has selected start point
+     */
+    private fun setStartMarkerWithSelection(position: LatLng) {
+        setStartMarker(position)
+        hasSelectedStartPoint = true
+    }
+
     private fun enterRoutePlanMode() {
         currentMode = AppMode.ROUTE_PLAN
+        hasSelectedStartPoint = false // Reset start point selection state
 
         // Show start location input
         binding.startSearchContainer.visibility = View.VISIBLE
@@ -606,6 +616,39 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
 
         showToast("Chọn điểm bắt đầu trên bản đồ hoặc nhập địa chỉ")
+    }
+
+    /**
+     * Update marker draggable state based on current mode
+     */
+    private fun updateMarkersDraggableState() {
+        val isDraggable = currentMode != AppMode.NAVIGATION
+
+        destMarker?.let { marker ->
+            // Remove and re-add marker with new draggable state
+            val position = marker.position
+            marker.remove()
+            destMarker = mMap.addMarker(
+                MarkerOptions()
+                    .position(position)
+                    .title("Điểm đến")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                    .draggable(isDraggable)
+            )
+        }
+
+        startMarker?.let { marker ->
+            // Remove and re-add marker with new draggable state
+            val position = marker.position
+            marker.remove()
+            startMarker = mMap.addMarker(
+                MarkerOptions()
+                    .position(position)
+                    .title("Điểm bắt đầu")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
+                    .draggable(isDraggable)
+            )
+        }
     }
 
     private fun drawRoute() {
@@ -660,10 +703,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isDriving = true
         isPaused = false
         currentMode = AppMode.NAVIGATION
-    currentPositionIndex = 0
-    // Reset completed path accumulation at the start of navigation
-    completedPathPoints.clear()
-    completedPathPoints.add(routePoints.first())
+        currentPositionIndex = 0
+        // Reset completed path accumulation at the start of navigation
+        completedPathPoints.clear()
+        completedPathPoints.add(routePoints.first())
+
+        // Update markers to be non-draggable during navigation
+        updateMarkersDraggableState()
 
         // Clear old fake location marker and circle when starting navigation
         // because the fake location is now moving along the route
@@ -685,7 +731,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Set initial speed and update label
         currentSpeed = binding.speedSlider.value.toDouble()
         binding.speedLabel.text = "Tốc độ: ${currentSpeed.toInt()} km/h"
-        
+
         android.util.Log.d("MapActivity", "Navigation started with speed: $currentSpeed km/h")
 
         // Hide search inputs
@@ -717,19 +763,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             onPosition = { position ->
                 runOnUiThread {
                     val currentTime = System.currentTimeMillis()
-                    
+
                     // Calculate bearing for GPS metadata
                     val bearing = previousLocation?.let { prev ->
                         calculateBearing(prev, position)
                     } ?: 0f
-                    
+
                     // Update GPS location - variable timing approach for anti-detection
                     viewModel.update(
-                        start = true, 
-                        la = position.latitude, 
+                        start = true,
+                        la = position.latitude,
                         ln = position.longitude
                     )
-                    
+
                     // Log GPS data with timing variance for debugging
                     val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
                     android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
@@ -785,12 +831,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.searchCard.visibility = View.VISIBLE
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
-        
+
         // Restore getFakeLocation button visibility if GPS is set
         if (isGpsSet) {
             binding.getFakeLocation.visibility = View.VISIBLE
         }
-        
+
         binding.actionButton.visibility = View.VISIBLE
         binding.actionButton.apply {
             text = "Dừng"
@@ -992,7 +1038,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routePolyline = null
         completedPolyline?.remove()
         completedPolyline = null
-    completedPathPoints.clear()
+        completedPathPoints.clear()
         currentPositionMarker?.remove()
         currentPositionMarker = null
         fakeLocationCircle?.remove()
@@ -1005,6 +1051,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Reset UI
         currentMode = AppMode.SEARCH
+        hasSelectedStartPoint = false // Reset start point selection state
+
+        // Update markers to be draggable again (though cleared above)
+        updateMarkersDraggableState()
+
         binding.actionButton.visibility = View.GONE
         binding.navigationControlsCard.visibility = View.GONE
         binding.cameraFollowToggle.visibility = View.GONE
@@ -1051,11 +1102,21 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     // Marker Drag Listener implementations
     override fun onMarkerDrag(marker: Marker) {
+        // Prevent dragging during navigation
+        if (currentMode == AppMode.NAVIGATION) {
+            return
+        }
         // Don't update route while dragging to reduce server load
         // Route will be updated when drag ends
     }
 
     override fun onMarkerDragEnd(marker: Marker) {
+        // Prevent dragging during navigation
+        if (currentMode == AppMode.NAVIGATION) {
+            showToast("Không thể thay đổi điểm đến khi đang di chuyển")
+            return
+        }
+
         // Update route only when drag ends to reduce server calls
         if (currentMode == AppMode.ROUTE_PLAN && startMarker != null && destMarker != null) {
             drawRoute()
@@ -1073,6 +1134,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     override fun onMarkerDragStart(marker: Marker) {
+        // Prevent dragging during navigation
+        if (currentMode == AppMode.NAVIGATION) {
+            showToast("Không thể thay đổi điểm đến khi đang di chuyển")
+            return
+        }
+
         // Add vibration feedback when drag starts
         val vibrator = getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
         if (vibrator.hasVibrator()) {
@@ -1180,19 +1247,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 onPosition = { position ->
                     runOnUiThread {
                         val currentTime = System.currentTimeMillis()
-                        
+
                         // Calculate bearing for GPS metadata
                         val bearing = previousLocation?.let { prev ->
                             calculateBearing(prev, position)
                         } ?: 0f
-                        
+
                         // Update GPS location - variable timing approach for anti-detection
                         viewModel.update(
-                            start = true, 
-                            la = position.latitude, 
+                            start = true,
+                            la = position.latitude,
                             ln = position.longitude
                         )
-                        
+
                         // Log GPS data with timing variance for debugging
                         val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
                         android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
@@ -1282,7 +1349,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
             updateSetLocationButton()
         }
-        
+
         // Reset UI to search mode
         currentMode = AppMode.SEARCH
         binding.actionButton.visibility = View.GONE

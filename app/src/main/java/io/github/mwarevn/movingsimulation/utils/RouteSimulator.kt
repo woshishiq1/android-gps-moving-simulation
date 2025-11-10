@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
  * Simulates movement along a route with configurable speed and realistic GPS behavior
  *
  * Anti-detection features:
- * - Variable GPS update intervals (180-320ms) 
+ * - Variable GPS update intervals (180-320ms)
  * - Realistic GPS jitter and timing variance
  * - Natural GPS behavior patterns
  */
@@ -21,7 +21,7 @@ class RouteSimulator(
 
     private var job: Job? = null
     private var paused: Boolean = false
-    
+
     // Anti-detection parameters
     private val minUpdateInterval = 228L // Safe min GPS update interval (increased from 180ms)
     private val maxUpdateInterval = 350L // Max GPS update interval (increased proportionally)
@@ -38,7 +38,7 @@ class RouteSimulator(
             random < 0.7 -> { // 70% normal updates (248-288ms)
                 (minUpdateInterval + 20 + Math.random() * 40).toLong()
             }
-            random < 0.9 -> { // 20% faster updates (228-248ms) 
+            random < 0.9 -> { // 20% faster updates (228-248ms)
                 (minUpdateInterval + Math.random() * 20).toLong()
             }
             else -> { // 10% slower updates (288-350ms)
@@ -55,12 +55,12 @@ class RouteSimulator(
         // Variable GPS accuracy simulation
         val baseJitter = 0.000003 // ~0.3m base
         val jitterMultiplier = 0.5 + Math.random() * 1.0 // 0.5x to 1.5x variance
-        
+
         val jitterLat = (Math.random() - 0.5) * baseJitter * jitterMultiplier
         val jitterLng = (Math.random() - 0.5) * baseJitter * jitterMultiplier
-        
+
         return LatLng(
-            position.latitude + jitterLat, 
+            position.latitude + jitterLat,
             position.longitude + jitterLng
         )
     }    fun start(onPosition: (LatLng) -> Unit = {}, onComplete: (() -> Unit)? = null) {
