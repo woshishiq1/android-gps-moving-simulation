@@ -265,7 +265,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 // Always allow clicking to set/change destination in SEARCH mode
                 setDestinationMarker(position)
                 if (destMarker != null) {
-                    showToast("Đã chọn điểm đến. Nhấn 'Chỉ đường' để lên kế hoạch route")
+                    // showToast("Đã chọn điểm đến. Nhấn 'Chỉ đường' để lên kế hoạch route")
                 }
             }
             AppMode.ROUTE_PLAN -> {
@@ -828,7 +828,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Show search card
         binding.searchCard.visibility = View.VISIBLE
 
-        showToast("Đã huỷ chỉ đường")
+        // showToast("Đã huỷ chỉ đường")
     }
 
     private fun startNavigation() {

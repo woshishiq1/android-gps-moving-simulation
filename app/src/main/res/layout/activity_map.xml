@@ -51,7 +51,7 @@
                         android:src="@android:drawable/ic_menu_search"
                         android:layout_marginStart="8dp"
                         android:layout_marginEnd="12dp"
-                        android:tint="?attr/colorPrimary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <EditText
                         android:id="@+id/destination_search"
@@ -92,7 +92,7 @@
                         android:src="@android:drawable/ic_menu_mylocation"
                         android:layout_marginStart="8dp"
                         android:layout_marginEnd="12dp"
-                        android:tint="?attr/colorSecondary" />
+                        app:tint="?attr/colorSecondary" />
 
                     <EditText
                         android:id="@+id/start_search"
@@ -126,7 +126,7 @@
                         android:src="@android:drawable/ic_menu_mylocation"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="12dp"
-                        android:tint="?attr/colorPrimary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <TextView
                         android:id="@+id/use_current_location_text"
@@ -142,7 +142,7 @@
                         android:layout_height="20dp"
                         android:src="@android:drawable/ic_menu_view"
                         android:layout_marginEnd="4dp"
-                        android:tint="?attr/colorPrimary" />
+                        app:tint="?attr/colorPrimary" />
 
                 </LinearLayout>
 
