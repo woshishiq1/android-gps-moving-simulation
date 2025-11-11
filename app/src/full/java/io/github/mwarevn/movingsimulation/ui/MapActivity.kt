@@ -341,8 +341,49 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupSearchBoxes() {
         // Destination search (always visible)
+        // Add TextWatcher to show/hide clear icon
+        binding.destinationSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                // Show clear icon only when there's text
+                if (s.isNullOrEmpty()) {
+                    binding.destinationSearch.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+                } else {
+                    // Use custom smaller icon
+                    binding.destinationSearch.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                        0, 0, R.drawable.ic_clear_text, 0
+                    )
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        // Handle click on clear icon
+        binding.destinationSearch.setOnTouchListener { v, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                val editText = v as android.widget.EditText
+                if (editText.text.isNotEmpty()) {
+                    // Check if click is on the drawableEnd (clear icon)
+                    val drawableEnd = editText.compoundDrawables[2]
+                    if (drawableEnd != null) {
+                        val clickX = event.x.toInt()
+                        val drawableWidth = drawableEnd.intrinsicWidth
+                        val drawableStart = editText.width - editText.paddingEnd - drawableWidth
+
+                        if (clickX >= drawableStart) {
+                            // Clicked on clear icon - clear destination
+                            clearDestinationMarker()
+                            return@setOnTouchListener true
+                        }
+                    }
+                }
+            }
+            false
+        }
+
         // Search only when user presses Enter/Done on keyboard
         binding.destinationSearch.setOnEditorActionListener { v, _, _ ->
             val text = v.text.toString().trim()
@@ -357,6 +398,51 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
 
         // Start location search (shown in route mode)
+        // Add TextWatcher to show/hide clear icon
+        binding.startSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                // Show clear icon only when there's text
+                if (s.isNullOrEmpty()) {
+                    binding.startSearch.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+                } else {
+                    // Use custom smaller icon
+                    binding.startSearch.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                        0, 0, R.drawable.ic_clear_text, 0
+                    )
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        // Handle click on clear icon
+        binding.startSearch.setOnTouchListener { v, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                val editText = v as android.widget.EditText
+                if (editText.text.isNotEmpty()) {
+                    // Check if click is on the drawableEnd (clear icon)
+                    val drawableEnd = editText.compoundDrawables[2]
+                    if (drawableEnd != null) {
+                        val clickX = event.x.toInt()
+                        val drawableWidth = drawableEnd.intrinsicWidth
+                        val drawableStart = editText.width - editText.paddingEnd - drawableWidth
+
+                        if (clickX >= drawableStart) {
+                            // Clicked on clear icon - clear start marker and text
+                            startMarker?.remove()
+                            startMarker = null
+                            hasSelectedStartPoint = false
+                            editText.text.clear()
+                            updateSwapButtonVisibility()
+                            updateUseCurrentLocationButtonVisibility()
+                            return@setOnTouchListener true
+                        }
+                    }
+                }
+            }
+            false
+        }
+
         // Search only when user presses Enter/Done on keyboard
         binding.startSearch.setOnEditorActionListener { v, _, _ ->
             val text = v.text.toString().trim()
@@ -558,9 +644,23 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             cancelRoutePlan()
         }
 
-        // Cancel route button (next to start button)
+        // Cancel route button (next to action button)
+        // Dual purpose: clear destination in SEARCH mode, cancel route in ROUTE_PLAN mode
         binding.cancelRouteButton.setOnClickListener {
-            cancelRoutePlan()
+            when (currentMode) {
+                AppMode.SEARCH -> {
+                    // In SEARCH mode: clear destination marker
+                    clearDestinationMarker()
+                }
+                AppMode.ROUTE_PLAN -> {
+                    // In ROUTE_PLAN mode: cancel route planning
+                    cancelRoutePlan()
+                }
+                else -> {
+                    // Should not happen, but handle gracefully
+                    cancelRoutePlan()
+                }
+            }
         }
 
         // Swap locations button (exchange start and destination)
@@ -695,11 +795,18 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             binding.destinationSearch.setText(address)
         }
 
-        // Show "Chỉ đường" button
-        binding.actionButton.apply {
-            text = "Chỉ đường"
-            visibility = View.VISIBLE
-            setIconResource(R.drawable.ic_navigation)
+        // Show "Chỉ đường" button AND close button in SEARCH mode
+        if (currentMode == AppMode.SEARCH) {
+            binding.actionButton.apply {
+                text = "Chỉ đường"
+                visibility = View.VISIBLE
+                setIconResource(R.drawable.ic_navigation)
+            }
+            // Show close button to allow user to clear destination without routing
+            binding.cancelRouteButton.apply {
+                text = "✕"  // X character
+                visibility = View.VISIBLE
+            }
         }
 
         // Stay in SEARCH mode - only "Chỉ đường" button switches to PLAN mode
@@ -716,25 +823,42 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun clearDestinationMarker() {
+        // Clear destination marker and reset to clean state
         destMarker?.remove()
         destMarker = null
-        binding.actionButton.visibility = View.GONE
-        currentMode = AppMode.SEARCH
-
-        // Clear destination search text
         binding.destinationSearch.text.clear()
 
-        // Also clear route if exists
-        routePolyline?.remove()
-        routePolyline = null
-        startMarker?.remove()
-        startMarker = null
-        binding.startSearchContainer.visibility = View.GONE
+        // If in ROUTE_PLAN mode, need to reset everything back to SEARCH mode
+        if (currentMode == AppMode.ROUTE_PLAN) {
+            // Clear start marker and route
+            startMarker?.remove()
+            startMarker = null
+            routePolyline?.remove()
+            routePolyline = null
+            routePoints = emptyList()
+            hasSelectedStartPoint = false
 
-        // Clear start search text as well
-        binding.startSearch.text.clear()
+            // Clear start search
+            binding.startSearch.text.clear()
 
-        // Update swap button visibility
+            // Hide route plan UI
+            binding.startSearchContainer.visibility = View.GONE
+            binding.useCurrentLocationContainer.visibility = View.GONE
+            binding.routeLoadingCard.visibility = View.GONE
+            binding.routeErrorCard.visibility = View.GONE
+
+            // Reset to SEARCH mode
+            currentMode = AppMode.SEARCH
+
+            // Update markers to non-draggable
+            updateMarkersDraggableState()
+        }
+
+        // Hide action buttons
+        binding.actionButton.visibility = View.GONE
+        binding.cancelRouteButton.visibility = View.GONE
+
+        // Update swap button (will hide since destMarker is null)
         updateSwapButtonVisibility()
     }
 
@@ -800,6 +924,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Show start location input
         binding.startSearchContainer.visibility = View.VISIBLE
         binding.startSearch.requestFocus()
+
+        // Update cancel button text for ROUTE_PLAN mode
+        binding.cancelRouteButton.apply {
+            text = "Huỷ"
+            visibility = View.GONE // Hide until route is drawn
+        }
 
         // Update marker draggable state (now draggable in ROUTE_PLAN mode)
         updateMarkersDraggableState()
@@ -1027,7 +1157,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     setIconResource(R.drawable.ic_navigation)
                     visibility = View.VISIBLE
                 }
-                binding.cancelRouteButton.visibility = View.VISIBLE
+                binding.cancelRouteButton.apply {
+                    text = "Huỷ"
+                    visibility = View.VISIBLE
+                }
 
                 // showToast("Đường đi đã sẵn sàng. Nhấn Bắt đầu để di chuyển")
 
@@ -1097,8 +1230,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             visibility = View.VISIBLE
         }
 
-        // Hide cancel route button
-        binding.cancelRouteButton.visibility = View.GONE
+        // Update cancel button text for SEARCH mode (show X to clear destination)
+        binding.cancelRouteButton.apply {
+            text = "✕"
+            visibility = View.VISIBLE
+        }
 
         // Show search card
         binding.searchCard.visibility = View.VISIBLE
@@ -1272,7 +1408,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                             getAddressFromLocation(startPos)
                         }
                     }
-                    
+
                     val toAddress = withContext(Dispatchers.IO) {
                         withTimeout(5000L) { // 5 second timeout
                             getAddressFromLocation(destPos)
@@ -1640,7 +1776,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Clear route cache to free memory
         routeCache.clear()
-        
+
         // Clear polylines and markers to free GPU memory
         routePolyline?.remove()
         routePolyline = null
@@ -1650,7 +1786,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         fakeLocationCircle = null
         fakeLocationCenterDot?.remove()
         fakeLocationCenterDot = null
-        
+
         android.util.Log.d("MapActivity", "Activity destroyed - all resources cleaned up")
     }
 

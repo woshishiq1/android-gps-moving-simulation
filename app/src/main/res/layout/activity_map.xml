@@ -65,7 +65,8 @@
                         android:imeOptions="actionSearch"
                         android:inputType="text"
                         android:maxLines="1"
-                        android:textSize="16sp" />
+                        android:textSize="16sp"
+                        android:drawablePadding="8dp" />
 
                 </LinearLayout>
 
@@ -95,7 +96,8 @@
                         android:imeOptions="actionSearch"
                         android:inputType="text"
                         android:maxLines="1"
-                        android:textSize="16sp" />
+                        android:textSize="16sp"
+                        android:drawablePadding="8dp" />
 
                 </LinearLayout>
 
