@@ -183,10 +183,8 @@ abstract class BaseMapActivity: AppCompatActivity() {
         binding.navView.setNavigationItemSelectedListener {
             when(it.itemId){
                 R.id.routing_settings -> {
-                    // Open routing settings dialog
-                    RoutingSettingsDialog.show(this) {
-                        showToast("Đã lưu cài đặt tìm đường")
-                    }
+                    // Open routing settings dialog - no toast needed, user can see the dialog
+                    RoutingSettingsDialog.show(this) { }
                 }
                 R.id.get_favorite -> {
                     openFavoriteListDialog()
@@ -250,9 +248,7 @@ abstract class BaseMapActivity: AppCompatActivity() {
                   showToast(getString(R.string.location_not_select))
                 }else{
                     viewModel.storeFavorite(s, lat, lon)
-                    viewModel.response.observe(getActivityInstance()){
-                        if (it == (-1).toLong()) showToast(getString(R.string.cant_save)) else showToast(getString(R.string.save))
-                    }
+                    // Response will be handled silently
                 }
             }
             setView(view)

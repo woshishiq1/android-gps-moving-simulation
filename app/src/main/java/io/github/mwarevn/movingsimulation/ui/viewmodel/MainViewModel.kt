@@ -237,16 +237,26 @@ class MainViewModel @Inject constructor(
         lon: Double
     ) = onIO {
 
-            val slot: Int
+            // CRITICAL FIX: Add max limit to prevent infinite loop
+            // Previous code could loop forever if database issues occur
+            val maxSlots = 1000 // Reasonable limit for favorite locations
+            var slot: Int = -1 // Initialize with default value
             var i = 0
-            while (true) {
+            while (i < maxSlots) {
                 if(getFavoriteSingle(i) == null) {
                     slot = i
                     break
                 } else {
                     i++
                 }
-        }
+            }
+
+            // Safety check: If we hit max slots or slot not found, log error and return
+            if (slot == -1 || i >= maxSlots) {
+                Timber.tag("MainViewModel").e("Max favorite slots ($maxSlots) reached or no slot found!")
+                return@onIO
+            }
+
          insertNewFavorite(Favorite(id = slot.toLong(), address = address, lat = lat, lng = lon))
     }
 

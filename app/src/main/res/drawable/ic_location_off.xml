@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- GPS Unset - Gray location pin with X -->
+    <path
+        android:fillColor="#9E9E9E"
+        android:pathData="M12,2C8.13,2 5,5.13 5,9c0,5.25 7,13 7,13s7,-7.75 7,-13c0,-3.87 -3.13,-7 -7,-7z"/>
+    <!-- X mark inside pin -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeWidth="1.2"
+        android:strokeColor="#FFFFFF"
+        android:pathData="M9.5,8.5l5,5M14.5,8.5l-5,5"/>
+</vector>

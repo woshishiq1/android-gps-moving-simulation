@@ -167,11 +167,12 @@
 
                 <ImageButton
                     android:id="@+id/swap_locations_button"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_revert"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:src="@drawable/ic_swap_vert"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Đảo ngược điểm đầu và điểm cuối"
+                    android:padding="4dp"
                     app:tint="?attr/colorPrimary" />
 
             </LinearLayout>
@@ -291,52 +292,58 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/pause_button"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Material3.Button.TonalButton.Icon"
                         android:layout_width="0dp"
-                        android:layout_height="40dp"
+                        android:layout_height="48dp"
                         android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
+                        android:layout_marginEnd="8dp"
                         android:text="Tạm dừng"
-                        android:textSize="12sp"
-                        android:minHeight="40dp"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
+                        android:textSize="13sp"
+                        android:minHeight="48dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
                         app:icon="@drawable/ic_pause"
-                        app:iconSize="16dp"
-                        app:iconPadding="4dp"/>
+                        app:iconSize="20dp"
+                        app:iconPadding="8dp"
+                        app:cornerRadius="24dp"/>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/resume_button"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Material3.Button.TonalButton.Icon"
                         android:layout_width="0dp"
-                        android:layout_height="40dp"
+                        android:layout_height="48dp"
                         android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
+                        android:layout_marginEnd="8dp"
                         android:text="Tiếp tục"
-                        android:textSize="12sp"
-                        android:minHeight="40dp"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
+                        android:textSize="13sp"
+                        android:minHeight="48dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
                         android:visibility="gone"
                         app:icon="@drawable/ic_play"
-                        app:iconSize="16dp"
-                        app:iconPadding="4dp"/>
+                        app:iconSize="20dp"
+                        app:iconPadding="8dp"
+                        app:cornerRadius="24dp"/>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/stop_button"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton.Icon"
                         android:layout_width="0dp"
-                        android:layout_height="40dp"
+                        android:layout_height="48dp"
                         android:layout_weight="1"
                         android:text="Dừng"
-                        android:textSize="12sp"
-                        android:minHeight="40dp"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
+                        android:textSize="13sp"
+                        android:minHeight="48dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
                         android:visibility="gone"
                         app:icon="@drawable/ic_stop"
-                        app:iconSize="16dp"
-                        app:iconPadding="4dp"/>
+                        app:iconSize="20dp"
+                        app:iconPadding="8dp"
+                        app:cornerRadius="24dp"
+                        app:strokeColor="?attr/colorError"
+                        android:textColor="?attr/colorError"
+                        app:iconTint="?attr/colorError"/>
 
                 </LinearLayout>
 
@@ -367,23 +374,31 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/completed_restart_button"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.Material3.Button.TonalButton.Icon"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="8dp"
                     android:text="Bắt đầu lại"
-                    app:icon="@drawable/ic_play"/>
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
+                    app:icon="@drawable/ic_restart"
+                    app:iconSize="20dp"
+                    app:cornerRadius="12dp"/>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/completed_finish_button"
-                    style="@style/Widget.Material3.Button.ElevatedButton"
+                    style="@style/Widget.Material3.Button.ElevatedButton.Icon"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="8dp"
                     android:text="Hoàn tất"
-                    app:icon="@drawable/ic_stop"/>
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
+                    app:icon="@drawable/ic_check_circle"
+                    app:iconSize="20dp"
+                    app:cornerRadius="12dp"/>
 
             </LinearLayout>
 
@@ -505,115 +520,115 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/action_button"
-                style="@style/Widget.Material3.Button.ElevatedButton"
+                style="@style/Widget.Material3.Button.ElevatedButton.Icon"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
                 android:text="Chỉ đường"
                 android:textSize="16sp"
-                android:paddingTop="16dp"
-                android:paddingBottom="16dp"
-                android:elevation="8dp"
+                android:textStyle="bold"
+                android:paddingTop="18dp"
+                android:paddingBottom="18dp"
+                android:elevation="12dp"
                 android:visibility="gone"
-                app:icon="@drawable/ic_baseline_directions_24"
-                app:iconGravity="start" />
+                app:icon="@drawable/ic_navigation"
+                app:iconSize="24dp"
+                app:iconGravity="start"
+                app:cornerRadius="16dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/cancel_route_button"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.Material3.Button.TonalButton.Icon"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Huỷ"
-                android:textColor="#D32F2F"
-                android:backgroundTint="#FFEBEE"
+                android:textColor="?attr/colorOnErrorContainer"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="18dp"
+                android:paddingBottom="18dp"
                 android:visibility="gone"
+                android:backgroundTint="?attr/colorErrorContainer"
                 app:icon="@drawable/ic_stop"
-                app:iconTint="#D32F2F" />
+                app:iconSize="20dp"
+                app:iconTint="?attr/colorOnErrorContainer"
+                app:cornerRadius="16dp"
+                app:elevation="6dp" />
 
         </LinearLayout>
 
         <!-- Old Bottom Action Button (kept for reference, will be replaced above) -->
 
-        <!-- Floating Action Buttons (Right Side) -->
-        <com.google.android.material.button.MaterialButton
+        <!-- Floating Action Buttons (Right Side) - Compact design -->
+        <!-- Current Location (Real GPS) - Blue circle -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/getlocation"
-            style="@style/Widget.Material3.FloatingActionButton.Surface"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="@string/getlocation_desc"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
             android:layout_alignParentBottom="true"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="200dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/ic_baseline_my_location_24"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="24dp" />
+            app:fabSize="mini"
+            app:fabCustomSize="36dp"
+            app:srcCompat="@drawable/ic_my_location"
+            app:tint="@null"
+            app:backgroundTint="?attr/colorSurface"
+            app:elevation="4dp" />
 
-        <com.google.android.material.button.MaterialButton
+        <!-- Fake Location - Orange crosshair target -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/getFakeLocation"
-            style="@style/Widget.Material3.FloatingActionButton.Tertiary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Tới vị trí fake location"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
             android:layout_above="@id/getlocation"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
             android:visibility="gone"
-            app:icon="@drawable/ic_baseline_my_location_24"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="24dp" />
+            app:fabSize="mini"
+            app:fabCustomSize="36dp"
+            app:srcCompat="@drawable/ic_fake_location"
+            app:tint="@null"
+            app:backgroundTint="?attr/colorSurface"
+            app:elevation="4dp" />
 
-        <!-- Set/Unset Location Button -->
-        <com.google.android.material.button.MaterialButton
+        <!-- Set/Unset Location Button - Green/Gray pin -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/setLocationButton"
-            style="@style/Widget.Material3.FloatingActionButton.Primary"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_alignParentEnd="true"
             android:layout_above="@id/getFakeLocation"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/ic_play"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="24dp" />
+            app:fabSize="mini"
+            app:fabCustomSize="36dp"
+            app:srcCompat="@drawable/ic_location_on"
+            app:tint="@null"
+            app:backgroundTint="?attr/colorSurface"
+            app:elevation="4dp" />
 
-        <!-- Camera Follow Toggle Button (only visible during navigation) -->
-        <com.google.android.material.button.MaterialButton
+        <!-- Camera Follow Toggle Button - Improved icon -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/cameraFollowToggle"
-            style="@style/Widget.Material3.FloatingActionButton.Secondary"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_alignParentEnd="true"
             android:layout_above="@id/setLocationButton"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
-            android:insetLeft="0dp"
-            android:insetTop="0dp"
-            android:insetRight="0dp"
-            android:insetBottom="0dp"
             android:visibility="gone"
             android:contentDescription="Bật/tắt theo dõi camera"
-            app:icon="@android:drawable/ic_menu_camera"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="24dp" />
+            app:fabSize="mini"
+            app:fabCustomSize="36dp"
+            app:srcCompat="@drawable/ic_camera_follow"
+            app:tint="?attr/colorOnSurface"
+            app:backgroundTint="?attr/colorSurface"
+            app:elevation="4dp" />
 
         <!-- Routing Settings Button (Hidden - use drawer menu instead) -->
         <com.google.android.material.button.MaterialButton

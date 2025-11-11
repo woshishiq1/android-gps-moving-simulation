@@ -21,6 +21,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.*
+import io.github.mwarevn.movingsimulation.BuildConfig
 import io.github.mwarevn.movingsimulation.R
 import io.github.mwarevn.movingsimulation.network.OsrmClient
 import io.github.mwarevn.movingsimulation.network.RoutingService
@@ -91,9 +92,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var isGpsSet = false // Track GPS state locally for immediate UI update
     private var currentFakeLocationPos: LatLng? = null // Store current fake location for quick use
 
-    // Camera follow throttling
+    // Camera follow throttling - Optimized for better performance
     private var lastCameraUpdateTime = 0L
-    private val CAMERA_UPDATE_INTERVAL_MS = 500L
+    private val CAMERA_UPDATE_INTERVAL_MS = 1000L // Increased from 500ms to 1000ms for better performance
 
     // Camera follow mode (only relevant during navigation)
     private var isCameraFollowing = true
@@ -326,10 +327,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     // First click in PLAN mode - set start point
                     setStartMarkerWithSelection(position)
                     // Button visibility will be updated in setStartMarker()
-                    showToast("Đã chọn điểm bắt đầu. Kéo thả để điều chỉnh chính xác, sau đó nhấn 'Bắt đầu di chuyển'")
                 } else if (hasSelectedStartPoint) {
                     // After first click - only allow drag/drop for fine-tuning
-                    showToast("Kéo thả điểm đánh dấu để điều chỉnh vị trí chính xác")
+                    // User can see the marker, no need for toast
                 } else {
                     showToast("Vui lòng chọn điểm đến trước, rồi nhấn 'Chỉ đường'")
                 }
@@ -447,7 +447,6 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 currentFakeLocationPos = null
                 viewModel.update(false, 0.0, 0.0)
                 updateSetLocationButton()
-                showToast("GPS đã được reset về vị trí thật")
             } else {
                 // Set GPS to destination marker if exists, otherwise current map center
                 val targetPosition = destMarker?.position ?: mMap.cameraPosition.target
@@ -458,7 +457,6 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 updateSetLocationButton()
                 // Show fake location circle
                 updateFakeLocationMarker(targetPosition)
-                showToast("GPS đã được set tại ${targetPosition.latitude}, ${targetPosition.longitude}")
             }
         }
 
@@ -701,7 +699,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.apply {
             text = "Chỉ đường"
             visibility = View.VISIBLE
-            setIconResource(R.drawable.ic_baseline_directions_24)
+            setIconResource(R.drawable.ic_navigation)
         }
 
         // Stay in SEARCH mode - only "Chỉ đường" button switches to PLAN mode
@@ -809,7 +807,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Update quick use current location button visibility
         updateUseCurrentLocationButtonVisibility()
 
-        showToast("Chọn điểm bắt đầu trên bản đồ hoặc nhập địa chỉ")
+        // User can see the UI change - no need for toast
     }
 
     /**
@@ -958,13 +956,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     // Use the cached route
                     routePoints = cachedEntry.routePoints
 
-                    // Show notification about cached route
-                    val serviceInfo = if (cachedEntry.isFallback) {
-                        "💾 ${cachedEntry.serviceName} (cache)"
-                    } else {
-                        "💾 ${cachedEntry.serviceName} (cache)"
-                    }
-                    showToast("Đã tìm được đường đi - $serviceInfo")
+                    // Show notification about cached route (only log, no toast)
+                    android.util.Log.d("MapActivity", "💾 Using cached route from ${cachedEntry.serviceName}")
 
                     // Return null to skip API call
                     null
@@ -999,13 +992,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                             oldestKey?.let { routeCache.remove(it) }
                         }
 
-                        // Show notification about which service was used
-                        val serviceInfo = if (apiResult.isFallback) {
-                            "🔄 ${apiResult.serviceName} (dự phòng)"
-                        } else {
-                            "✓ ${apiResult.serviceName}"
-                        }
-                        showToast("Đã tìm được đường đi - $serviceInfo")
+                        // Log success (no toast)
+                        android.util.Log.d("MapActivity", "✓ Route found via ${apiResult.serviceName}")
                     }
 
                     apiResult
@@ -1036,7 +1024,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 // Update button to "Bắt đầu" with cancel button
                 binding.actionButton.apply {
                     text = "Bắt đầu"
-                    setIconResource(R.drawable.ic_play)
+                    setIconResource(R.drawable.ic_navigation)
                     visibility = View.VISIBLE
                 }
                 binding.cancelRouteButton.visibility = View.VISIBLE
@@ -1105,7 +1093,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Show "Chỉ đường" button again with destination marker still visible
         binding.actionButton.apply {
             text = "Chỉ đường"
-            setIconResource(R.drawable.ic_baseline_directions_24)
+            setIconResource(R.drawable.ic_navigation)
             visibility = View.VISIBLE
         }
 
@@ -1193,12 +1181,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         val startPos = routePoints.first()
         fakeLocationCircle = createStationaryLocationCircle(startPos)
 
-        // Start route simulator with GlobalScope for background execution
+        // CRITICAL FIX: Use lifecycleScope instead of GlobalScope to prevent memory leaks
+        // GlobalScope causes coroutines to run indefinitely even after Activity is destroyed
+        // lifecycleScope automatically cancels when Activity is destroyed
         routeSimulator = RouteSimulator(
             points = routePoints,
             speedKmh = currentSpeed,
-            updateIntervalMs = 100L, // Fast updates for smooth movement (10 updates/second)
-            scope = GlobalScope // Use GlobalScope to continue running in background
+            updateIntervalMs = 300L, // Optimized: 300ms for better performance (was 100ms)
+            scope = lifecycleScope // FIXED: Use lifecycleScope for proper cleanup
         )
 
        // showToast("🏍️ Bắt đầu di chuyển với tốc độ ${currentSpeed.toInt()} km/h")
@@ -1227,7 +1217,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
                     // Log GPS data with timing variance for debugging
                     val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
-                    android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                    // Optimize: Reduce logging frequency to lower I/O overhead
+                    if (BuildConfig.DEBUG && currentPositionIndex % 5 == 0) {
+                        android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                    }
                     lastGpsUpdateTime = currentTime
 
                     // Track current navigation position for pause/stop functionality
@@ -1266,23 +1259,44 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun updateNavigationAddresses() {
-        lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleScope.launch {
             try {
                 // Get start and destination positions
                 val startPos = startMarker?.position
                 val destPos = destMarker?.position
 
                 if (startPos != null && destPos != null) {
-                    val fromAddress = getAddressFromLocation(startPos)
-                    val toAddress = getAddressFromLocation(destPos)
-
-                    withContext(Dispatchers.Main) {
-                        binding.navFromAddress.text = "• $fromAddress"
-                        binding.navToAddress.text = "• $toAddress"
+                    // Get addresses in background with timeout
+                    val fromAddress = withContext(Dispatchers.IO) {
+                        withTimeout(5000L) { // 5 second timeout
+                            getAddressFromLocation(startPos)
+                        }
                     }
+                    
+                    val toAddress = withContext(Dispatchers.IO) {
+                        withTimeout(5000L) { // 5 second timeout
+                            getAddressFromLocation(destPos)
+                        }
+                    }
+
+                    // Update UI on main thread
+                    binding.navFromAddress.text = "• $fromAddress"
+                    binding.navToAddress.text = "• $toAddress"
                 }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                android.util.Log.e("MapActivity", "Timeout getting navigation addresses")
+                // Show coordinates as fallback
+                val startPos = startMarker?.position
+                val destPos = destMarker?.position
+                binding.navFromAddress.text = "• ${String.format("%.6f, %.6f", startPos?.latitude ?: 0.0, startPos?.longitude ?: 0.0)}"
+                binding.navToAddress.text = "• ${String.format("%.6f, %.6f", destPos?.latitude ?: 0.0, destPos?.longitude ?: 0.0)}"
             } catch (e: Exception) {
                 android.util.Log.e("MapActivity", "Error getting navigation addresses", e)
+                // Show coordinates as fallback
+                val startPos = startMarker?.position
+                val destPos = destMarker?.position
+                binding.navFromAddress.text = "• ${String.format("%.6f, %.6f", startPos?.latitude ?: 0.0, startPos?.longitude ?: 0.0)}"
+                binding.navToAddress.text = "• ${String.format("%.6f, %.6f", destPos?.latitude ?: 0.0, destPos?.longitude ?: 0.0)}"
             }
         }
     }
@@ -1331,15 +1345,15 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun updateSetLocationButton() {
-        // Update icon based on local GPS state
+        // Update icon based on local GPS state with distinct icons
         if (isGpsSet) {
-            // GPS is set -> show stop icon (to unset)
-            binding.setLocationButton.setIconResource(R.drawable.ic_stop)
+            // GPS is set -> show gray pin with X (to unset)
+            binding.setLocationButton.setImageResource(R.drawable.ic_location_off)
             // Show getFakeLocation button when GPS is set
             binding.getFakeLocation.visibility = View.VISIBLE
         } else {
-            // GPS is not set -> show play icon (to set)
-            binding.setLocationButton.setIconResource(R.drawable.ic_play)
+            // GPS is not set -> show green pin with checkmark (to set)
+            binding.setLocationButton.setImageResource(R.drawable.ic_location_on)
             // Hide getFakeLocation button when GPS is not set
             binding.getFakeLocation.visibility = View.GONE
         }
@@ -1356,14 +1370,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun updateCompletedPath(currentPosition: LatLng) {
-        // Append current position if moved at least 2.5m from last stored point to reduce vertices on long routes
+        // Optimize: Increase threshold to reduce polyline updates and GPU load
+        // Reduced vertex count = better performance on long routes
         val last = completedPathPoints.lastOrNull()
-        if (last == null || distanceBetween(last, currentPosition) >= 2.5) {
+        if (last == null || distanceBetween(last, currentPosition) >= 5.0) { // Increased from 2.5m to 5m
             completedPathPoints.add(currentPosition)
         }
 
         // Draw or update polyline incrementally
-        if (completedPathPoints.size > 1) {
+        // Optimize: Only update every 3rd point to reduce rendering overhead
+        if (completedPathPoints.size > 1 && completedPathPoints.size % 3 == 0) {
             if (completedPolyline == null) {
                 completedPolyline = mMap.addPolyline(
                     PolylineOptions()
@@ -1379,11 +1395,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     private fun updateCameraFollowButton() {
         if (isCameraFollowing) {
-            // Show camera icon when following
-            binding.cameraFollowToggle.setIconResource(android.R.drawable.ic_menu_camera)
+            // Show camera following icon
+            binding.cameraFollowToggle.setImageResource(R.drawable.ic_camera_follow)
         } else {
-            // Show free move icon when free
-            binding.cameraFollowToggle.setIconResource(android.R.drawable.ic_menu_gallery)
+            // Show free move camera icon
+            binding.cameraFollowToggle.setImageResource(R.drawable.ic_camera_free)
         }
     }
 
@@ -1616,11 +1632,26 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     override fun onDestroy() {
         super.onDestroy()
+        // CRITICAL: Proper cleanup to prevent memory leaks
         routeSimulator?.stop()
+        routeSimulator = null
         searchJob?.cancel()
+        searchJob = null
 
         // Clear route cache to free memory
         routeCache.clear()
+        
+        // Clear polylines and markers to free GPU memory
+        routePolyline?.remove()
+        routePolyline = null
+        completedPolyline?.remove()
+        completedPolyline = null
+        fakeLocationCircle?.remove()
+        fakeLocationCircle = null
+        fakeLocationCenterDot?.remove()
+        fakeLocationCenterDot = null
+        
+        android.util.Log.d("MapActivity", "Activity destroyed - all resources cleaned up")
     }
 
     override fun onPause() {
@@ -1736,11 +1767,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             when (marker) {
                 destMarker -> {
                     binding.destinationSearch.setText(address)
-                    showToast("Điểm đến: $address")
                 }
                 startMarker -> {
                     binding.startSearch.setText(address)
-                    showToast("Điểm bắt đầu: $address")
                     // Update "use current location" button visibility when start marker is dragged
                     updateUseCurrentLocationButtonVisibility()
                 }
@@ -1821,7 +1850,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Stop the route simulator
         routeSimulator?.stop()
 
-        showToast("Đã hoàn tất. GPS vẫn được set tại vị trí hiện tại")
+        // Completion reached - no need for toast
     }
 
     private fun onRestartNavigation() {
@@ -1866,12 +1895,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 fakeLocationCircle = createStationaryLocationCircle(startPos)
             }
 
-            // Restart route simulator with GlobalScope for background execution
+            // CRITICAL FIX: Use lifecycleScope instead of GlobalScope
             routeSimulator = RouteSimulator(
                 points = routePoints,
                 speedKmh = currentSpeed,
-                updateIntervalMs = 100L, // Fast updates for smooth movement (10 updates/second)
-                scope = GlobalScope // Use GlobalScope to continue running in background
+                updateIntervalMs = 300L, // Optimized: 300ms for better performance
+                scope = lifecycleScope // FIXED: Proper lifecycle management
             )
 
             routeSimulator?.start(
@@ -1898,7 +1927,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
                         // Log GPS data with timing variance for debugging
                         val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
-                        android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                        // Optimize: Log only every 5th update in debug mode
+                        if (BuildConfig.DEBUG && currentPositionIndex % 5 == 0) {
+                            android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                        }
                         lastGpsUpdateTime = currentTime
 
                         // Track current navigation position for pause/stop functionality
@@ -1935,7 +1967,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             isDriving = true
             currentMode = AppMode.NAVIGATION
 
-            showToast("Đã bắt đầu lại chuyến đi")
+            // Navigation restarted - no need for toast
         } else {
             showToast("Không thể bắt đầu lại - dữ liệu route đã mất")
         }
@@ -2013,6 +2045,6 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Restore set/unset location button since navigation stopped
         binding.setLocationButton.visibility = View.VISIBLE
 
-        showToast("Đã dừng. GPS được set tại vị trí tạm dừng")
+        // Navigation stopped - no need for toast
     }
 }

@@ -4,11 +4,12 @@ import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.*
 
 /**
- * RouteSimulator - Enhanced GPS movement simulation for route navigation
+ * RouteSimulator - Optimized GPS movement simulation for route navigation
  * Simulates movement along a route with configurable speed and realistic GPS behavior
  *
- * Features:
- * - Smooth GPS updates (100ms intervals, 10 updates/second)
+ * Performance Optimizations:
+ * - Reduced update frequency to 300ms (from 100ms) to lower CPU/GPU load
+ * - Balanced between smoothness and battery efficiency
  * - Realistic GPS jitter (1-2 meters) to prevent GPS loss detection
  * - Natural GPS behavior patterns that mimic real mobile devices
  * - Prevents route cutting at turns with accurate interpolation
@@ -16,34 +17,34 @@ import kotlinx.coroutines.*
 class RouteSimulator(
     private val points: List<LatLng>,
     private var speedKmh: Double = 45.0, // Default motorbike speed
-    private val updateIntervalMs: Long = 100L, // Fast updates for smooth movement
+    private val updateIntervalMs: Long = 300L, // Optimized: 300ms for better performance (was 100ms)
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
 
     private var job: Job? = null
     private var paused: Boolean = false
 
-    // GPS update parameters - optimized for smooth movement
-    private val minUpdateInterval = 80L  // Min GPS update interval (80ms)
-    private val maxUpdateInterval = 120L // Max GPS update interval (120ms)
+    // GPS update parameters - optimized for balance between smoothness and performance
+    private val minUpdateInterval = 250L  // Min GPS update interval (250ms, was 80ms)
+    private val maxUpdateInterval = 350L  // Max GPS update interval (350ms, was 120ms)
 
     /**
      * Generate realistic GPS update interval with minimal variance
-     * Keeps intervals tight for smooth movement
-     * Range: 80-120ms for smooth updates
+     * Optimized for better battery life while maintaining smooth movement
+     * Range: 250-350ms for balanced performance (was 80-120ms)
      */
     private fun getRealisticUpdateInterval(): Long {
-        // Most updates around 100ms, with slight variance
+        // Most updates around 300ms, with slight variance
         val random = Math.random()
         return when {
-            random < 0.8 -> { // 80% normal updates (95-105ms)
-                (95 + Math.random() * 10).toLong()
+            random < 0.8 -> { // 80% normal updates (280-320ms)
+                (280 + Math.random() * 40).toLong()
             }
-            random < 0.95 -> { // 15% faster updates (80-95ms)
-                (minUpdateInterval + Math.random() * 15).toLong()
+            random < 0.95 -> { // 15% faster updates (250-280ms)
+                (minUpdateInterval + Math.random() * 30).toLong()
             }
-            else -> { // 5% slower updates (105-120ms)
-                (105 + Math.random() * 15).toLong()
+            else -> { // 5% slower updates (320-350ms)
+                (320 + Math.random() * 30).toLong()
             }
         }
     }

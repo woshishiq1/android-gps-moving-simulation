@@ -70,7 +70,8 @@ object LocationHook {
 
         if (lpparam.packageName == "android") { XposedBridge.log("Hooking system server")
         if (settings.isStarted && (settings.isHookedSystem && !ignorePkg.contains(lpparam.packageName))) {
-            if (System.currentTimeMillis() - mLastUpdated > 50) {
+            // Optimize: Increase system hook interval to reduce overhead
+            if (System.currentTimeMillis() - mLastUpdated > 200) {
                 updateLocation()
             }
 
@@ -228,7 +229,8 @@ object LocationHook {
                             location.altitude = 0.0
                             location.speed = speed
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
+                            // Optimize: Remove excessive logging from Android 14+ hook
+                            // XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false
@@ -248,7 +250,9 @@ object LocationHook {
                 "android.location.Location",
                 lpparam.classLoader
             )
-            val interval = 50L // Reduce throttle to 50ms for smooth updates
+            // Optimize: Increase interval to 200ms to reduce CPU overhead
+            // 50ms was causing too frequent updates and battery drain
+            val interval = 200L // Balanced between smoothness and performance
 
             for (method in LocationClass.declaredMethods) {
                 if (method.name == "getLatitude") {
@@ -390,7 +394,8 @@ object LocationHook {
                             location.altitude = 0.0
                             location.speed = speed
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS(app): lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
+                            // Optimize: Disable logging in production for better performance
+                            // XposedBridge.log("GS(app): lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false
@@ -425,7 +430,8 @@ object LocationHook {
                             location.bearing = bearing
                             location.accuracy = accuracy
                             location.speedAccuracyMetersPerSecond = 0F
-                            XposedBridge.log("GS(getLastKnown): lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
+                            // Optimize: Disable logging to reduce overhead
+                            // XposedBridge.log("GS(getLastKnown): lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
                                     location.javaClass, location, "setIsFromMockProvider", false
