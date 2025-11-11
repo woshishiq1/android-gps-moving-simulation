@@ -33,15 +33,22 @@
 # Retrofit - Keep all network models and services
 -keep class io.github.mwarevn.movingsimulation.network.** { *; }
 -keepnames class io.github.mwarevn.movingsimulation.network.**
+-keepclassmembers class io.github.mwarevn.movingsimulation.network.** { *; }
 
 # Retrofit generic signatures (fixes ClassCastException)
 -keepattributes Signature
 -keepattributes *Annotation*
 -keepattributes EnclosingMethod
 -keepattributes InnerClasses
+-keepattributes Exceptions
 
-# Retrofit service interfaces
+# Retrofit service interfaces - CRITICAL for reflection
 -keepclasseswithmembers class * {
+    @retrofit2.http.* <methods>;
+}
+
+# Keep ALL Retrofit interfaces and their return types
+-keep interface * {
     @retrofit2.http.* <methods>;
 }
 
@@ -50,6 +57,10 @@
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
 -keep class okhttp3.** { *; }
+-keepattributes RuntimeVisibleAnnotations
+-keepattributes RuntimeInvisibleAnnotations
+-keepattributes RuntimeVisibleParameterAnnotations
+-keepattributes RuntimeInvisibleParameterAnnotations
 
 # Gson specific rules
 -keepclassmembers,allowobfuscation class * {

@@ -10,14 +10,23 @@ import io.github.mwarevn.movingsimulation.BuildConfig
 class HookEntry : IXposedHookLoadPackage {
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        if (lpparam.packageName == BuildConfig.APPLICATION_ID) {
-            XposedHelpers.findAndHookMethod("io.github.mwarevn.movingsimulation.ui.viewmodel.MainViewModel", lpparam.classLoader, "updateXposedState", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.result = null
-                }
-            })
+        // Skip system apps to avoid breaking the system
+        if (lpparam.packageName == "android" || lpparam.packageName == BuildConfig.APPLICATION_ID) {
+            if (lpparam.packageName == BuildConfig.APPLICATION_ID) {
+                XposedHelpers.findAndHookMethod("io.github.mwarevn.movingsimulation.ui.viewmodel.MainViewModel", lpparam.classLoader, "updateXposedState", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        param.result = null
+                    }
+                })
+            }
+            LocationHook.initHooks(lpparam)
+            return
         }
 
+        // Initialize anti-detection hooks FIRST to hide our presence
+        AntiDetection.initAntiDetection(lpparam)
+
+        // Then initialize location hooks
         LocationHook.initHooks(lpparam)
     }
 }
