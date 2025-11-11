@@ -237,6 +237,38 @@
 
                 </LinearLayout>
 
+                <!-- Route Info - From/To addresses -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginBottom="4dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
+
+                    <TextView
+                        android:id="@+id/nav_from_address"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="• Đang tải..."
+                        android:textSize="11sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:layout_marginBottom="2dp"/>
+
+                    <TextView
+                        android:id="@+id/nav_to_address"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="• Đang tải..."
+                        android:textSize="11sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:maxLines="1"
+                        android:ellipsize="end"/>
+
+                </LinearLayout>
+
                 <!-- Compact Speed Slider -->
                 <com.google.android.material.slider.Slider
                     android:id="@+id/speed_slider"
@@ -489,12 +521,15 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/cancel_route_button"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Huỷ"
+                android:textColor="#D32F2F"
+                android:backgroundTint="#FFEBEE"
                 android:visibility="gone"
-                app:icon="@drawable/ic_stop" />
+                app:icon="@drawable/ic_stop"
+                app:iconTint="#D32F2F" />
 
         </LinearLayout>
 
@@ -579,7 +614,7 @@
             app:iconGravity="textStart"
             app:iconPadding="0dp"
             app:iconSize="24dp" />
-            
+
         <!-- Routing Settings Button (Hidden - use drawer menu instead) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/routingSettingsButton"

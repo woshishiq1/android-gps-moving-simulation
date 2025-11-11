@@ -1152,6 +1152,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.actionButton.visibility = View.GONE
         binding.navigationControlsCard.visibility = View.VISIBLE
 
+        // Update navigation addresses
+        updateNavigationAddresses()
+
         // Hide swap button during navigation
         binding.swapButtonContainer.visibility = View.GONE
 
@@ -1260,6 +1263,28 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 }
             }
         )
+    }
+
+    private fun updateNavigationAddresses() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Get start and destination positions
+                val startPos = startMarker?.position
+                val destPos = destMarker?.position
+
+                if (startPos != null && destPos != null) {
+                    val fromAddress = getAddressFromLocation(startPos)
+                    val toAddress = getAddressFromLocation(destPos)
+
+                    withContext(Dispatchers.Main) {
+                        binding.navFromAddress.text = "• $fromAddress"
+                        binding.navToAddress.text = "• $toAddress"
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MapActivity", "Error getting navigation addresses", e)
+            }
+        }
     }
 
     private fun stopNavigation() {
