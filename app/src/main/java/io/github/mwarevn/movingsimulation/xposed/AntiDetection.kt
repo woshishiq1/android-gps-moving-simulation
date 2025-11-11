@@ -52,6 +52,8 @@ object AntiDetection {
             hookStackTrace(lpparam)   // Stack trace inspection is common
             hookBuildFields(lpparam)
             hookPackageManager(lpparam)
+            hookNativeLibrary(lpparam) // Some apps check native libs
+            hookMapView(lpparam)       // Prevent map-based detection
 
             // Optional hooks - enable if still detected
             // hookSystemProperties(lpparam)
@@ -76,10 +78,14 @@ object AntiDetection {
                 ClassLoader::class.java,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        val className = param.args[0] as? String ?: return
-                        // Fast check - most class names won't match
-                        if (isXposedClassName(className)) {
-                            param.throwable = ClassNotFoundException(className)
+                        try {
+                            val className = param.args[0] as? String ?: return
+                            // Fast check - most class names won't match
+                            if (isXposedClassName(className)) {
+                                param.throwable = ClassNotFoundException(className)
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail - don't break app
                         }
                     }
                 }
@@ -92,9 +98,13 @@ object AntiDetection {
                 String::class.java,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        val className = param.args[0] as? String ?: return
-                        if (isXposedClassName(className)) {
-                            param.throwable = ClassNotFoundException(className)
+                        try {
+                            val className = param.args[0] as? String ?: return
+                            if (isXposedClassName(className)) {
+                                param.throwable = ClassNotFoundException(className)
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail
                         }
                     }
                 }
@@ -116,10 +126,14 @@ object AntiDetection {
                 String::class.java,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        val className = param.args[0] as? String ?: return
-                        // Fast check with cache
-                        if (isXposedClassName(className)) {
-                            param.throwable = ClassNotFoundException(className)
+                        try {
+                            val className = param.args[0] as? String ?: return
+                            // Fast check with cache
+                            if (isXposedClassName(className)) {
+                                param.throwable = ClassNotFoundException(className)
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail
                         }
                     }
                 }
@@ -141,13 +155,17 @@ object AntiDetection {
                 "getStackTrace",
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        val originalTrace = param.result as? Array<StackTraceElement> ?: return
-                        // Quick scan first - avoid filter if no Xposed frames
-                        if (!hasXposedFrames(originalTrace)) return
+                        try {
+                            val originalTrace = param.result as? Array<StackTraceElement> ?: return
+                            // Quick scan first - avoid filter if no Xposed frames
+                            if (!hasXposedFrames(originalTrace)) return
 
-                        val cleanedTrace = originalTrace.filterNot { isXposedStackFrame(it) }.toTypedArray()
-                        if (cleanedTrace.size != originalTrace.size) {
-                            param.result = cleanedTrace
+                            val cleanedTrace = originalTrace.filterNot { isXposedStackFrame(it) }.toTypedArray()
+                            if (cleanedTrace.size != originalTrace.size) {
+                                param.result = cleanedTrace
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail - don't break stack traces
                         }
                     }
                 }
@@ -159,13 +177,17 @@ object AntiDetection {
                 "getStackTrace",
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        val originalTrace = param.result as? Array<StackTraceElement> ?: return
-                        // Quick scan first
-                        if (!hasXposedFrames(originalTrace)) return
+                        try {
+                            val originalTrace = param.result as? Array<StackTraceElement> ?: return
+                            // Quick scan first
+                            if (!hasXposedFrames(originalTrace)) return
 
-                        val cleanedTrace = originalTrace.filterNot { isXposedStackFrame(it) }.toTypedArray()
-                        if (cleanedTrace.size != originalTrace.size) {
-                            param.result = cleanedTrace
+                            val cleanedTrace = originalTrace.filterNot { isXposedStackFrame(it) }.toTypedArray()
+                            if (cleanedTrace.size != originalTrace.size) {
+                                param.result = cleanedTrace
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail
                         }
                     }
                 }
@@ -282,6 +304,88 @@ object AntiDetection {
             )
         } catch (e: Throwable) {
             XposedBridge.log("AntiDetection: Failed to hook PackageManager: ${e.message}")
+        }
+    }
+
+    /**
+     * Hook Runtime.load/loadLibrary to hide suspicious native libraries
+     * Some apps check for Xposed/LSPosed native libraries
+     */
+    private fun hookNativeLibrary(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            val suspiciousLibs = setOf(
+                "xposed",
+                "lsposed", 
+                "edxposed",
+                "riru"
+            )
+
+            // Hook Runtime.load
+            XposedHelpers.findAndHookMethod(
+                Runtime::class.java,
+                "load",
+                String::class.java,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        try {
+                            val libPath = param.args[0] as? String ?: return
+                            if (suspiciousLibs.any { libPath.contains(it, ignoreCase = true) }) {
+                                param.throwable = UnsatisfiedLinkError("Library not found: $libPath")
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail
+                        }
+                    }
+                }
+            )
+
+            // Hook Runtime.loadLibrary
+            XposedHelpers.findAndHookMethod(
+                Runtime::class.java,
+                "loadLibrary",
+                String::class.java,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        try {
+                            val libName = param.args[0] as? String ?: return
+                            if (suspiciousLibs.any { libName.contains(it, ignoreCase = true) }) {
+                                param.throwable = UnsatisfiedLinkError("Library not found: $libName")
+                            }
+                        } catch (t: Throwable) {
+                            // Silently fail
+                        }
+                    }
+                }
+            )
+        } catch (e: Throwable) {
+            XposedBridge.log("AntiDetection: Failed to hook native library: ${e.message}")
+        }
+    }
+
+    /**
+     * Hook Map-related classes to prevent location-based detection
+     * Some banking apps detect mock location via Google Maps API
+     */
+    private fun hookMapView(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            // Try to hook GoogleMap.isMyLocationEnabled
+            val googleMapClass = XposedHelpers.findClassIfExists(
+                "com.google.android.gms.maps.GoogleMap",
+                lpparam.classLoader
+            ) ?: return
+
+            XposedHelpers.findAndHookMethod(
+                googleMapClass,
+                "isMyLocationEnabled",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        // Always return false to hide that location is being mocked
+                        param.result = false
+                    }
+                }
+            )
+        } catch (e: Throwable) {
+            // This is optional, don't log error
         }
     }
 }
