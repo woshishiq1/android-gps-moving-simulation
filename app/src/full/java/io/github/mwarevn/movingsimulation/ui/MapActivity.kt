@@ -92,6 +92,46 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var isGpsSet = false // Track GPS state locally for immediate UI update
     private var currentFakeLocationPos: LatLng? = null // Store current fake location for quick use
 
+    // Joystick position monitoring
+    private var lastJoystickLat = 0.0
+    private var lastJoystickLon = 0.0
+    private var isActivityVisible = false // Track if activity is visible
+    private val prefChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        // Listen for GPS position changes from joystick
+        if (key == "latitude" || key == "longitude") {
+            if (!isDriving && isGpsSet) {
+                val currentLat = PrefManager.getLat
+                val currentLon = PrefManager.getLng
+                
+                // Check if position changed
+                val latDiff = Math.abs(currentLat - lastJoystickLat)
+                val lonDiff = Math.abs(currentLon - lastJoystickLon)
+                
+                if (latDiff > 0.0000001 || lonDiff > 0.0000001) {
+                    lastJoystickLat = currentLat
+                    lastJoystickLon = currentLon
+                    
+                    val newPosition = LatLng(currentLat, currentLon)
+                    
+                    // Update fake location marker on map (even if activity is not visible)
+                    // Map updates will be queued and applied when activity becomes visible
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        try {
+                            if (fakeLocationCircle != null && fakeLocationCenterDot != null) {
+                                fakeLocationCircle?.center = newPosition
+                                fakeLocationCenterDot?.position = newPosition
+                                currentFakeLocationPos = newPosition
+                                android.util.Log.d("MapActivity", "Joystick updated GPS marker to: $newPosition (visible: $isActivityVisible)")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("MapActivity", "Error updating marker from joystick: ${e.message}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Camera follow throttling - Optimized for better performance
     private var lastCameraUpdateTime = 0L
     private val CAMERA_UPDATE_INTERVAL_MS = 1000L // Increased from 500ms to 1000ms for better performance
@@ -275,6 +315,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         mMap.setOnMapClickListener(this)
         mMap.setOnMarkerDragListener(this)
+
+        // Track camera bearing for joystick screen-relative movement
+        mMap.setOnCameraMoveListener {
+            val bearing = mMap.cameraPosition.bearing
+            PrefManager.cameraBearing = bearing
+        }
 
         setupButtons()
         setupSearchBoxes()
@@ -777,13 +823,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Remove old marker
         destMarker?.remove()
 
-        // Add new marker - only draggable in ROUTE_PLAN mode
+        // Add new marker - draggable in both SEARCH and ROUTE_PLAN mode
         destMarker = mMap.addMarker(
             MarkerOptions()
                 .position(position)
                 .title("Điểm đến")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                .draggable(currentMode == AppMode.ROUTE_PLAN) // Only draggable in route planning mode
+                .draggable(currentMode == AppMode.SEARCH || currentMode == AppMode.ROUTE_PLAN) // Draggable in SEARCH and ROUTE_PLAN modes
         )
 
         // Move camera
@@ -972,10 +1018,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     /**
      * Update marker draggable state based on current mode
-     * Only draggable in ROUTE_PLAN mode
+     * Destination marker is draggable in SEARCH and ROUTE_PLAN modes
+     * Start marker is only draggable in ROUTE_PLAN mode
      */
     private fun updateMarkersDraggableState() {
-        val isDraggable = currentMode == AppMode.ROUTE_PLAN
+        val isDestDraggable = currentMode == AppMode.SEARCH || currentMode == AppMode.ROUTE_PLAN
+        val isStartDraggable = currentMode == AppMode.ROUTE_PLAN
 
         destMarker?.let { marker ->
             // Remove and re-add marker with new draggable state
@@ -986,7 +1034,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     .position(position)
                     .title("Điểm đến")
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                    .draggable(isDraggable)
+                    .draggable(isDestDraggable)
             )
         }
 
@@ -999,7 +1047,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     .position(position)
                     .title("Điểm bắt đầu")
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-                    .draggable(isDraggable)
+                    .draggable(isStartDraggable)
             )
         }
     }
@@ -1760,6 +1808,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 updateFakeLocationMarker(position)
                 updateSetLocationButton()
 
+                // Initialize last joystick position
+                lastJoystickLat = lat
+                lastJoystickLon = lng
+
                 android.util.Log.d("MapActivity", "Restored fake location from previous session: $lat, $lng")
                 // showToast("Đánh dấu lại vị trí GPS lần trước: ${String.format("%.4f", lat)}, ${String.format("%.4f", lng)}")
             }
@@ -1773,6 +1825,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = null
         searchJob?.cancel()
         searchJob = null
+        
+        // Unregister preference listener
+        try {
+            PrefManager.sharedPreferences.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
+        } catch (e: Exception) {
+            android.util.Log.e("MapActivity", "Error unregistering pref listener: ${e.message}")
+        }
 
         // Clear route cache to free memory
         routeCache.clear()
@@ -1792,6 +1851,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     override fun onPause() {
         super.onPause()
+        
+        isActivityVisible = false
+        
+        // Keep preference listener active even when paused
+        // This allows joystick updates to continue updating the map in background
+        android.util.Log.d("MapActivity", "Activity paused, keeping listener active for background updates")
+        
         // Save navigation state when going to background
         if (isDriving) {
             wasNavigatingBeforeBackground = true
@@ -1810,6 +1876,36 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     override fun onResume() {
         super.onResume()
+        
+        isActivityVisible = true
+        
+        // Register preference change listener for joystick updates
+        // Unregister first to avoid duplicate registration
+        try {
+            PrefManager.sharedPreferences.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
+        } catch (e: Exception) {
+            // Ignore if not registered
+        }
+        PrefManager.sharedPreferences.registerOnSharedPreferenceChangeListener(prefChangeListener)
+        android.util.Log.d("MapActivity", "Registered preference change listener for joystick")
+        
+        // Sync current position from PrefManager in case it changed while paused
+        if (isGpsSet && !isDriving) {
+            val currentLat = PrefManager.getLat
+            val currentLon = PrefManager.getLng
+            if (currentLat != lastJoystickLat || currentLon != lastJoystickLon) {
+                lastJoystickLat = currentLat
+                lastJoystickLon = currentLon
+                val newPosition = LatLng(currentLat, currentLon)
+                if (fakeLocationCircle != null && fakeLocationCenterDot != null) {
+                    fakeLocationCircle?.center = newPosition
+                    fakeLocationCenterDot?.position = newPosition
+                    currentFakeLocationPos = newPosition
+                    android.util.Log.d("MapActivity", "Synced GPS marker position on resume: $newPosition")
+                }
+            }
+        }
+        
         // Restore navigation state when returning from background
         if (wasNavigatingBeforeBackground && backgroundNavigationState != null) {
             val savedState = backgroundNavigationState!!
@@ -1913,19 +2009,21 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
 
         // Update route only when drag ends to reduce server calls
+        // Only in ROUTE_PLAN mode
         if (currentMode == AppMode.ROUTE_PLAN && startMarker != null && destMarker != null) {
             drawRoute()
         }
     }
 
     override fun onMarkerDragStart(marker: Marker) {
-        // Only allow dragging in ROUTE_PLAN mode
-        if (currentMode != AppMode.ROUTE_PLAN) {
-            if (currentMode == AppMode.NAVIGATION) {
-                showToast("Không thể thay đổi điểm đến khi đang di chuyển")
-            } else if (currentMode == AppMode.SEARCH) {
-                showToast("Vui lòng nhấn 'Chỉ đường' để điều chỉnh vị trí")
-            }
+        // Allow dragging in both SEARCH and ROUTE_PLAN modes
+        if (currentMode == AppMode.NAVIGATION) {
+            showToast("Không thể thay đổi điểm đến khi đang di chuyển")
+            return
+        }
+
+        // In SEARCH mode, only allow dragging destination marker
+        if (currentMode == AppMode.SEARCH && marker != destMarker) {
             return
         }
 

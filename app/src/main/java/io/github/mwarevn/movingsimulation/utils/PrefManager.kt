@@ -20,6 +20,7 @@ object PrefManager   {
     private const val LONGITUDE = "longitude"
     private const val BEARING = "bearing"
     private const val SPEED = "speed"
+    private const val CAMERA_BEARING = "camera_bearing" // Camera rotation angle for joystick screen-relative movement
     private const val HOOKED_SYSTEM = "system_hooked"
     private const val RANDOM_POSITION = "random_position"
     private const val ACCURACY_SETTING = "accuracy_level"
@@ -63,6 +64,9 @@ object PrefManager   {
 
     }
 
+    // Expose SharedPreferences for listeners
+    val sharedPreferences: SharedPreferences
+        get() = pref
 
     val isStarted : Boolean
         get() = pref.getBoolean(START, false)
@@ -78,6 +82,10 @@ object PrefManager   {
 
     val getSpeed : Float
         get() = pref.getFloat(SPEED, 0F)
+
+    var cameraBearing : Float
+        get() = pref.getFloat(CAMERA_BEARING, 0F)
+        set(value) { pref.edit().putFloat(CAMERA_BEARING, value).apply() }
 
     var isSystemHooked : Boolean
         get() = pref.getBoolean(HOOKED_SYSTEM, false)

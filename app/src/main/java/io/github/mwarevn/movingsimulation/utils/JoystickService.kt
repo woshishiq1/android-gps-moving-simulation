@@ -43,16 +43,34 @@ class JoystickService : Service(),View.OnTouchListener,View.OnClickListener {
         }
         // mJoystickView?.setOnMoveListener { angle, strength ->
         mJoystickView?.setOnMoveListener { angle, strength, event ->
-            val radians = Math.toRadians(angle.toDouble())
             try {
+                // Get camera bearing (map rotation) for screen-relative movement
+                val cameraBearing = PrefManager.cameraBearing
+                
+                // Adjust joystick angle by camera bearing to maintain screen-relative direction
+                // When camera rotates, we need to compensate so "up" on joystick = "up" on screen
+                val adjustedAngle = angle - cameraBearing
+                val radians = Math.toRadians(adjustedAngle.toDouble())
+                
+                android.util.Log.d("JoystickService", "Joystick moved: angle=$angle, strength=$strength, cameraBearing=$cameraBearing, adjustedAngle=$adjustedAngle")
+                
+                // Calculate movement factors based on adjusted angle
+                // cos/sin give us the X/Y components of movement
                 val factorX: Double = cos(radians) / 100000.0 * (strength / 30)
                 val factorY: Double = sin(radians) / 100000.0 * (strength / 30)
+                
+                // Apply movement to current position
                 lon = PrefManager.getLng + factorX
                 lat = PrefManager.getLat + factorY
+                
+                android.util.Log.d("JoystickService", "New position: lat=$lat, lon=$lon")
+                android.util.Log.d("JoystickService", "Updating location to PrefManager: lat=$lat, lon=$lon, start=true")
+                
                 updateLocation(lat, lon)
 
             }catch (e : Exception){
                 e.printStackTrace()
+                android.util.Log.e("JoystickService", "Error in joystick movement: ${e.message}", e)
             }
         }
         mJoystickLayoutParams = WindowManager.LayoutParams(
@@ -92,7 +110,8 @@ class JoystickService : Service(),View.OnTouchListener,View.OnClickListener {
     private fun updateLocation(lat : Double,lon : Double){
         // JoystickService uses direct PrefManager for manual control (not auto-route)
         // This maintains consistency with the original manual GPS control feature
-        PrefManager.update(start = PrefManager.isStarted, la = lat, ln = lon)
+        // Always set start = true to ensure GPS is active when joystick is used
+        PrefManager.update(start = true, la = lat, ln = lon)
 
     }
 
