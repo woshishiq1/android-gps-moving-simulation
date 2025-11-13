@@ -1,12 +1,12 @@
 # GPS Setter
 
-[![Stars](https://img.shields.io/github/stars/jqssun/android-gps-setter)](https://github.com/jqssun/android-gps-setter/stargazers)
+[![Stars](https://img.shields.io/github/stars/minhdevs/android-gps-moving-simulation)](https://github.com/minhdevs/android-gps-moving-simulation/stargazers)
 [![LSPosed](https://img.shields.io/github/downloads/Xposed-Modules-Repo/io.github.mwarevn.movingsimulation/total?label=LSPosed&logo=Android&style=flat&labelColor=F48FB1&logoColor=ffffff)](https://github.com/Xposed-Modules-Repo/io.github.mwarevn.movingsimulation/releases)
-[![GitHub](https://img.shields.io/github/downloads/jqssun/android-gps-setter/total?label=GitHub&logo=GitHub)](https://github.com/jqssun/android-gps-setter/releases)
-[![release](https://img.shields.io/github/v/release/jqssun/android-gps-setter)](https://github.com/jqssun/android-gps-setter/releases)
-[![build](https://img.shields.io/github/actions/workflow/status/jqssun/android-gps-setter/apk.yml)](https://github.com/jqssun/android-gps-setter/actions/workflows/apk.yml)
-[![license](https://img.shields.io/github/license/jqssun/android-gps-setter)](https://github.com/jqssun/android-gps-setter/blob/master/LICENSE)
-[![issues](https://img.shields.io/github/issues/jqssun/android-gps-setter)](https://github.com/jqssun/android-gps-setter/issues)
+[![GitHub](https://img.shields.io/github/downloads/minhdevs/android-gps-moving-simulation/total?label=GitHub&logo=GitHub)](https://github.com/minhdevs/android-gps-moving-simulation/releases)
+[![release](https://img.shields.io/github/v/release/minhdevs/android-gps-moving-simulation)](https://github.com/minhdevs/android-gps-moving-simulation/releases)
+[![build](https://img.shields.io/github/actions/workflow/status/minhdevs/android-gps-moving-simulation/apk.yml)](https://github.com/minhdevs/android-gps-moving-simulation/actions/workflows/apk.yml)
+[![license](https://img.shields.io/github/license/minhdevs/android-gps-moving-simulation)](https://github.com/minhdevs/android-gps-moving-simulation/blob/master/LICENSE)
+[![issues](https://img.shields.io/github/issues/minhdevs/android-gps-moving-simulation)](https://github.com/minhdevs/android-gps-moving-simulation/issues)
 
 A GPS setter based on the Xposed framework. This fork is the first module to achieve support for Android 15+ with its sources available.
 
@@ -31,7 +31,7 @@ A GPS setter based on the Xposed framework. This fork is the first module to ach
     <tr>
         <th>Distribution</th>
         <td>
-            <a href="https://github.com/jqssun/android-gps-setter/releases">
+            <a href="https://github.com/minhdevs/android-gps-moving-simulation/releases">
                 <img
                     src="https://raw.githubusercontent.com/NeoApplications/Neo-Backup/refs/heads/main/badge_github.png"
                     alt="Get it on GitHub" width="200" />
@@ -48,7 +48,7 @@ A GPS setter based on the Xposed framework. This fork is the first module to ach
 </table>
 
 <!--
-[<img src="https://raw.githubusercontent.com/NeoApplications/Neo-Backup/refs/heads/main/badge_github.png" alt="Get it on GitHub" height="80">](https://github.com/jqssun/android-gps-setter/releases)
+[<img src="https://raw.githubusercontent.com/NeoApplications/Neo-Backup/refs/heads/main/badge_github.png" alt="Get it on GitHub" height="80">](https://github.com/minhdevs/android-gps-moving-simulation/releases)
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">]()
 [<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" height="80">]()
 -->
@@ -93,7 +93,7 @@ Specifically, in the case of hooking just the app, it intercepts [`android.locat
 
 ## Demo
 
-<video loop src='https://github.com/user-attachments/assets/388ac05c-db56-42ce-9253-2f1855800a5c' alt="demo" width="200" style="display: block; margin: auto;"></video> <!-- https://github.com/jqssun/android-gps-setter/releases/download/v0.0.1/0.mp4 -->
+<video loop src='https://github.com/user-attachments/assets/388ac05c-db56-42ce-9253-2f1855800a5c' alt="demo" width="200" style="display: block; margin: auto;"></video> <!-- https://github.com/minhdevs/android-gps-moving-simulation/releases/download/v0.0.1/0.mp4 -->
 
 ## Credits
 

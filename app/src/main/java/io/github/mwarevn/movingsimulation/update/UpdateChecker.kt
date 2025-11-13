@@ -47,9 +47,9 @@ class UpdateChecker @Inject constructor(private val apiResponse : GitHubService)
                             body,
                             publishedAt,
                             asset?.browserDownloadUrl
-                                ?: "https://github.com/jqssun/android-gps-setter/releases",
+                                ?: "https://github.com/minhdevs/android-gps-moving-simulation/releases",
                             asset?.name ?: "app-full-arm64-v8a-release.apk",
-                            releaseUrl ?: "https://github.com/jqssun/android-gps-setter/releases"
+                            releaseUrl ?: "https://github.com/minhdevs/android-gps-moving-simulation/releases"
                         )
                     ).isSuccess
                 }
