@@ -75,10 +75,19 @@ Specifically, in the case of hooking just the app, it intercepts [`android.locat
 
 ## Features
 
--   ✨ (New) Supports system server location APIs introduced in Android 14+
--   🍀 (New) Supports a fully FLOSS build flavor - including all underlying dependencies
--   🖲️ (New) Allows adjusting location on the fly via an on-screen joystick overlay
--   🎉 (New) Features custom designed resource bundles with updated dependent libraries
+-   🚗 **Moving Simulation** - Simulate realistic GPS movement along routes with adjustable speed (1-120 km/h)
+-   🗺️ **Route Planning** - Plan routes with multiple waypoints and follow them automatically
+-   ⏯️ **Playback Controls** - Pause, resume, and stop navigation with real-time progress tracking
+-   📊 **Distance & Time Tracking** - Monitor traveled distance and remaining route in real-time
+-   ✨ Supports system server location APIs introduced in Android 14+
+-   🍀 Supports a fully FLOSS build flavor - including all underlying dependencies
+-   🖲️ Allows adjusting location on the fly via an on-screen joystick overlay with screen-relative movement
+-   🎯 Quick replace location button - change fake GPS location instantly without unset/set
+-   🎨 Enhanced fake location indicator with larger, more visible markers
+-   👆 Drag & drop support for destination marker in search mode for precise positioning
+-   🔄 Real-time GPS position updates even when app is in background
+-   📍 Joystick movements follow screen orientation, not compass direction
+-   🎉 Features custom designed resource bundles with updated dependent libraries
 -   🎲 Allows using a live updating random location in the vicinity of the set point
 -   🔥 Compatible with latest Material Design
 
