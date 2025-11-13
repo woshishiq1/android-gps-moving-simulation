@@ -93,7 +93,7 @@ Specifically, in the case of hooking just the app, it intercepts [`android.locat
 
 ## Demo
 
-<video loop src='https://github.com/user-attachments/assets/fbc0901c-b126-4ca7-9239-34390a76e7f9' alt="demo" width="200" style="display: block; margin: auto;"></video> <!-- https://github.com/jqssun/android-gps-setter/releases/download/v0.0.1/0.mp4 -->
+<video loop src='https://github.com/user-attachments/assets/388ac05c-db56-42ce-9253-2f1855800a5c' alt="demo" width="200" style="display: block; margin: auto;"></video> <!-- https://github.com/jqssun/android-gps-setter/releases/download/v0.0.1/0.mp4 -->
 
 ## Credits
 
