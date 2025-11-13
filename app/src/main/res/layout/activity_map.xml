@@ -598,13 +598,31 @@
             app:backgroundTint="?attr/colorSurface"
             app:elevation="4dp" />
 
+        <!-- Replace Location Button - Orange swap icon (only shown in SEARCH mode when conditions met) -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/replaceLocationButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="Thay thế fake location"
+            android:layout_alignParentEnd="true"
+            android:layout_above="@id/getFakeLocation"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone"
+            app:fabSize="mini"
+            app:fabCustomSize="36dp"
+            app:srcCompat="@drawable/ic_random_position"
+            app:tint="?attr/colorPrimary"
+            app:backgroundTint="?attr/colorSurface"
+            app:elevation="4dp" />
+
         <!-- Set/Unset Location Button - Green/Gray pin -->
         <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/setLocationButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentEnd="true"
-            android:layout_above="@id/getFakeLocation"
+            android:layout_above="@id/replaceLocationButton"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
             app:fabSize="mini"

@@ -54,8 +54,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         const val FAKE_LOCATION_CENTER_COLOR = 0xFFFF4500.toInt() // Solid orange red center dot
 
         // Circle dimensions
-        const val CIRCLE_RADIUS = 20.0              // Outer circle radius in meters
-        const val CIRCLE_STROKE_WIDTH = 3f          // Outer circle border width
+        const val CIRCLE_RADIUS = 25.0              // Outer circle radius in meters (increased from 20.0)
+        const val CIRCLE_STROKE_WIDTH = 4f          // Outer circle border width (increased from 3f)
         const val CIRCLE_Z_INDEX = 128f             // Outer circle Z-index
         const val CENTER_DOT_Z_INDEX = 129f         // Center dot Z-index (higher = on top)
     }
@@ -221,7 +221,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
      * Create a circular bitmap icon for center dot that maintains size at all zoom levels
      * Similar to Google Maps real location icon with white border
      */
-    private fun createCenterDotIcon(color: Int, sizePx: Int = 36): BitmapDescriptor {
+    private fun createCenterDotIcon(color: Int, sizePx: Int = 48): BitmapDescriptor {
         val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val radius = sizePx / 2f
@@ -592,6 +592,24 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             }
         }
 
+        // Replace Location Button - quickly change fake location without unset/set
+        binding.replaceLocationButton.setOnClickListener {
+            val targetPosition = destMarker?.position ?: mMap.cameraPosition.target
+            android.util.Log.d("MapActivity", "Replacing GPS location to: ${targetPosition.latitude}, ${targetPosition.longitude}")
+            
+            // Update fake location directly
+            currentFakeLocationPos = targetPosition
+            viewModel.update(true, targetPosition.latitude, targetPosition.longitude)
+            
+            // Update visual marker
+            updateFakeLocationMarker(targetPosition)
+            
+            // Update button visibility
+            updateReplaceLocationButtonVisibility()
+            
+            showToast("Đã thay thế vị trí fake GPS")
+        }
+
         // Camera Follow Toggle Button (only works during navigation)
         binding.cameraFollowToggle.setOnClickListener {
             if (isDriving) {
@@ -866,6 +884,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update swap button visibility
         updateSwapButtonVisibility()
+        
+        // Update replace location button visibility
+        updateReplaceLocationButtonVisibility()
     }
 
     private fun clearDestinationMarker() {
@@ -906,6 +927,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update swap button (will hide since destMarker is null)
         updateSwapButtonVisibility()
+        
+        // Update replace location button visibility
+        updateReplaceLocationButtonVisibility()
     }
 
     private fun setStartMarker(position: LatLng) {
@@ -982,6 +1006,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update quick use current location button visibility
         updateUseCurrentLocationButtonVisibility()
+        
+        // Update replace location button visibility (hide in ROUTE_PLAN mode)
+        updateReplaceLocationButtonVisibility()
 
         // User can see the UI change - no need for toast
     }
@@ -1357,6 +1384,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Hide getFakeLocation button during navigation (user has camera toggle instead)
         binding.getFakeLocation.visibility = View.GONE
+        
+        // Hide replace location button during navigation
+        binding.replaceLocationButton.visibility = View.GONE
 
         // Hide set/unset location button during navigation
         binding.setLocationButton.visibility = View.GONE
@@ -1541,6 +1571,24 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             // Hide getFakeLocation button when GPS is not set
             binding.getFakeLocation.visibility = View.GONE
         }
+        
+        // Update replace button visibility whenever set button state changes
+        updateReplaceLocationButtonVisibility()
+    }
+    
+    private fun updateReplaceLocationButtonVisibility() {
+        // Show replace button only in SEARCH mode when:
+        // 1. GPS is already set (isGpsSet == true)
+        // 2. There is a destination marker
+        // 3. The marked position is different from current fake location
+        
+        val shouldShow = currentMode == AppMode.SEARCH && 
+                        isGpsSet && 
+                        destMarker?.position != null &&
+                        currentFakeLocationPos != null &&
+                        destMarker?.position != currentFakeLocationPos
+        
+        binding.replaceLocationButton.visibility = if (shouldShow) View.VISIBLE else View.GONE
     }
 
     private fun updateFakeLocationMarker(position: LatLng) {
@@ -1787,6 +1835,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Restore getFakeLocation button visibility based on GPS state
         binding.getFakeLocation.visibility = if (isGpsSet) View.VISIBLE else View.GONE
+        
+        // Update replace location button visibility (hide in SEARCH mode when no marker)
+        updateReplaceLocationButtonVisibility()
 
         routeSimulator?.stop()
         routeSimulator = null
@@ -1999,6 +2050,8 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             when (marker) {
                 destMarker -> {
                     binding.destinationSearch.setText(address)
+                    // Update replace button visibility when destination marker is moved
+                    updateReplaceLocationButtonVisibility()
                 }
                 startMarker -> {
                     binding.startSearch.setText(address)
