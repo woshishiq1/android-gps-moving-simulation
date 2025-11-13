@@ -117,6 +117,12 @@ class ActivitySettings : AppCompatActivity() {
             preferenceManager?.preferenceDataStore = SettingPreferenceDataStore()
             setPreferencesFromResource(R.xml.preferences, rootKey)
 
+            // Anti-Detection Settings navigation
+            findPreference<Preference>("anti_detection_settings")?.setOnPreferenceClickListener {
+                startActivity(Intent(requireContext(), AntiDetectionSettingsActivity::class.java))
+                true
+            }
+
             findPreference<EditTextPreference>("accuracy_level")?.let {
                 it.summary = "${PrefManager.accuracy} m"
                 it.setOnBindEditTextListener { editText ->

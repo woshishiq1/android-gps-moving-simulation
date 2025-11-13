@@ -28,6 +28,12 @@
             android:launchMode="singleTop">
         </activity>
         <activity
+            android:name=".ui.AntiDetectionSettingsActivity"
+            android:exported="false"
+            android:label="Anti-Detection Hooks"
+            android:launchMode="singleTop">
+        </activity>
+        <activity
             android:name=".ui.MapActivity"
             android:exported="true">
             <intent-filter>

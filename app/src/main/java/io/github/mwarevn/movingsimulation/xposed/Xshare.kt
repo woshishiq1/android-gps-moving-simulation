@@ -45,7 +45,7 @@ class Xshare {
     val isHookedSystem : Boolean
     get() = pref().getBoolean(
         "system_hooked",
-        true
+        false  // CRITICAL: Default to FALSE to prevent bootloop
     )
 
     val isRandomPosition :Boolean
