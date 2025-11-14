@@ -102,17 +102,17 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             if (!isDriving && isGpsSet) {
                 val currentLat = PrefManager.getLat
                 val currentLon = PrefManager.getLng
-                
+
                 // Check if position changed
                 val latDiff = Math.abs(currentLat - lastJoystickLat)
                 val lonDiff = Math.abs(currentLon - lastJoystickLon)
-                
+
                 if (latDiff > 0.0000001 || lonDiff > 0.0000001) {
                     lastJoystickLat = currentLat
                     lastJoystickLon = currentLon
-                    
+
                     val newPosition = LatLng(currentLat, currentLon)
-                    
+
                     // Update fake location marker on map (even if activity is not visible)
                     // Map updates will be queued and applied when activity becomes visible
                     lifecycleScope.launch(Dispatchers.Main) {
@@ -267,9 +267,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         super.onCreate(savedInstanceState)
 
         // Configure GPS settings
-        io.github.mwarevn.movingsimulation.utils.PrefManager.isRandomPosition = false
-        io.github.mwarevn.movingsimulation.utils.PrefManager.isSystemHooked = false
-        io.github.mwarevn.movingsimulation.utils.PrefManager.accuracy = "15"
+        // io.github.mwarevn.movingsimulation.utils.PrefManager.isRandomPosition = false
+        // io.github.mwarevn.movingsimulation.utils.PrefManager.isSystemHooked = false
+        // io.github.mwarevn.movingsimulation.utils.PrefManager.accuracy = "15"
     }
 
     override fun initializeMap() {
@@ -596,17 +596,17 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.replaceLocationButton.setOnClickListener {
             val targetPosition = destMarker?.position ?: mMap.cameraPosition.target
             android.util.Log.d("MapActivity", "Replacing GPS location to: ${targetPosition.latitude}, ${targetPosition.longitude}")
-            
+
             // Update fake location directly
             currentFakeLocationPos = targetPosition
             viewModel.update(true, targetPosition.latitude, targetPosition.longitude)
-            
+
             // Update visual marker
             updateFakeLocationMarker(targetPosition)
-            
+
             // Update button visibility
             updateReplaceLocationButtonVisibility()
-            
+
             showToast("Đã thay thế vị trí fake GPS")
         }
 
@@ -884,7 +884,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update swap button visibility
         updateSwapButtonVisibility()
-        
+
         // Update replace location button visibility
         updateReplaceLocationButtonVisibility()
     }
@@ -927,7 +927,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update swap button (will hide since destMarker is null)
         updateSwapButtonVisibility()
-        
+
         // Update replace location button visibility
         updateReplaceLocationButtonVisibility()
     }
@@ -1006,7 +1006,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update quick use current location button visibility
         updateUseCurrentLocationButtonVisibility()
-        
+
         // Update replace location button visibility (hide in ROUTE_PLAN mode)
         updateReplaceLocationButtonVisibility()
 
@@ -1384,7 +1384,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Hide getFakeLocation button during navigation (user has camera toggle instead)
         binding.getFakeLocation.visibility = View.GONE
-        
+
         // Hide replace location button during navigation
         binding.replaceLocationButton.visibility = View.GONE
 
@@ -1571,23 +1571,23 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             // Hide getFakeLocation button when GPS is not set
             binding.getFakeLocation.visibility = View.GONE
         }
-        
+
         // Update replace button visibility whenever set button state changes
         updateReplaceLocationButtonVisibility()
     }
-    
+
     private fun updateReplaceLocationButtonVisibility() {
         // Show replace button only in SEARCH mode when:
         // 1. GPS is already set (isGpsSet == true)
         // 2. There is a destination marker
         // 3. The marked position is different from current fake location
-        
-        val shouldShow = currentMode == AppMode.SEARCH && 
-                        isGpsSet && 
+
+        val shouldShow = currentMode == AppMode.SEARCH &&
+                        isGpsSet &&
                         destMarker?.position != null &&
                         currentFakeLocationPos != null &&
                         destMarker?.position != currentFakeLocationPos
-        
+
         binding.replaceLocationButton.visibility = if (shouldShow) View.VISIBLE else View.GONE
     }
 
@@ -1835,7 +1835,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Restore getFakeLocation button visibility based on GPS state
         binding.getFakeLocation.visibility = if (isGpsSet) View.VISIBLE else View.GONE
-        
+
         // Update replace location button visibility (hide in SEARCH mode when no marker)
         updateReplaceLocationButtonVisibility()
 
@@ -1876,7 +1876,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = null
         searchJob?.cancel()
         searchJob = null
-        
+
         // Unregister preference listener
         try {
             PrefManager.sharedPreferences.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
@@ -1902,13 +1902,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     override fun onPause() {
         super.onPause()
-        
+
         isActivityVisible = false
-        
+
         // Keep preference listener active even when paused
         // This allows joystick updates to continue updating the map in background
         android.util.Log.d("MapActivity", "Activity paused, keeping listener active for background updates")
-        
+
         // Save navigation state when going to background
         if (isDriving) {
             wasNavigatingBeforeBackground = true
@@ -1927,9 +1927,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
     override fun onResume() {
         super.onResume()
-        
+
         isActivityVisible = true
-        
+
         // Register preference change listener for joystick updates
         // Unregister first to avoid duplicate registration
         try {
@@ -1939,7 +1939,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
         PrefManager.sharedPreferences.registerOnSharedPreferenceChangeListener(prefChangeListener)
         android.util.Log.d("MapActivity", "Registered preference change listener for joystick")
-        
+
         // Sync current position from PrefManager in case it changed while paused
         if (isGpsSet && !isDriving) {
             val currentLat = PrefManager.getLat
@@ -1956,7 +1956,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 }
             }
         }
-        
+
         // Restore navigation state when returning from background
         if (wasNavigatingBeforeBackground && backgroundNavigationState != null) {
             val savedState = backgroundNavigationState!!
