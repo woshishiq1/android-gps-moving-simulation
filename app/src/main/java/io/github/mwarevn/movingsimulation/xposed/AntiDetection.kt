@@ -96,6 +96,18 @@ object AntiDetection {
                 hookMapView(lpparam)
             }
 
+            // TIER 4: ADVANCED FULL FLAVOR HOOKS (powerful but require caution - disabled by default)
+            // These provide maximum bypass for ML detection but are more resource-intensive
+            if (settings.isHookSensorSpoof) {
+                SensorSpoofHook.initHooks(lpparam)
+            }
+            if (settings.isHookNetworkFake) {
+                NetworkFakeHook.initHooks(lpparam)
+            }
+            if (settings.isHookAdvancedRandomize) {
+                AdvancedRandomizer.initHooks(lpparam)
+            }
+
         } catch (e: Throwable) {
             XposedBridge.log("AntiDetection init failed: ${e.message}")
         }

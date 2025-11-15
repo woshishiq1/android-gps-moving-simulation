@@ -15,6 +15,7 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.mwarevn.movingsimulation.BuildConfig
+import io.github.mwarevn.movingsimulation.utils.SpeedSyncManager
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import timber.log.Timber
 import java.util.*
@@ -58,7 +59,17 @@ object LocationHook {
                 if (settings.isRandomPosition) settings.getLng + (dlng * 180.0 / pi) else settings.getLng
             accuracy = settings.accuracy!!.toFloat()
             bearing = settings.getBearing
-            speed = settings.getSpeed
+            
+            // Get actual speed from RouteSimulator via SpeedSyncManager
+            // This syncs with actual movement speed (including curve reduction)
+            val syncedSpeed = SpeedSyncManager.getActualSpeed()
+            speed = if (syncedSpeed > 0.01f) {
+                // If RouteSimulator is running, use actual simulation speed
+                SpeedSyncManager.speedKmhToMs(syncedSpeed)
+            } else {
+                // Fallback to settings speed when simulation is not active
+                settings.getSpeed
+            }
 
         } catch (e: Exception) {
             // Silently fail - don't use context.packageName as it may crash early

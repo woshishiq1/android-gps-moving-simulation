@@ -631,9 +631,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 val actualSpeed = if (isDriving && newSpeed <= 0) 1.0 else newSpeed
 
                 currentSpeed = actualSpeed
-                binding.speedLabel.text = "${actualSpeed.toInt()} km/h"
+                updateSpeedLabel(actualSpeed)
 
                 android.util.Log.d("MapActivity", "Speed changed to: $actualSpeed km/h (isDriving: $isDriving, isPaused: $isPaused)")
+
+                // Update saved speed in SpeedSyncManager (preserves during curve reduction)
+                try {
+                    io.github.mwarevn.movingsimulation.utils.SpeedSyncManager.setSavedSpeed(actualSpeed.toFloat())
+                } catch (e: Exception) {
+                    // Silently fail if SpeedSyncManager not available
+                }
 
                 // Update speed in real-time if driving and not paused
                 if (isDriving && !isPaused && routeSimulator != null) {
@@ -663,6 +670,13 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 routeSimulator?.resume()
                 // Ensure current speed is applied when resuming
                 routeSimulator?.setSpeedKmh(currentSpeed)
+                // Sync saved speed with SpeedSyncManager
+                try {
+                    io.github.mwarevn.movingsimulation.utils.SpeedSyncManager.setSavedSpeed(currentSpeed.toFloat())
+                    updateSpeedLabel(currentSpeed)
+                } catch (e: Exception) {
+                    // Silently fail
+                }
                 binding.pauseButton.visibility = View.VISIBLE
                 binding.resumeButton.visibility = View.GONE
                 binding.stopButton.visibility = View.GONE
@@ -1442,6 +1456,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
                     // Update traveled distance
                     updateTraveledDistance(position)
+                    
+                    // Update speed label to show control/actual speeds with curve reduction
+                    try {
+                        val actualSpeed = io.github.mwarevn.movingsimulation.utils.SpeedSyncManager.getActualSpeed()
+                        if (actualSpeed > 0.01f && currentSpeed > 0) {
+                            binding.speedLabel.text = "${currentSpeed.toInt()} / ${actualSpeed.toInt()} km/h"
+                        }
+                    } catch (e: Exception) {
+                        // Silently fail if SpeedSyncManager not available
+                    }
 
                     // Update fake location circle to show current GPS position
                     fakeLocationCircle?.center = position
@@ -1574,6 +1598,28 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
         // Update replace button visibility whenever set button state changes
         updateReplaceLocationButtonVisibility()
+    }
+    
+    /**
+     * Update speed label to show control speed and actual speed (after curve reduction)
+     * Format: "108 / 86 km/h" (control / actual)
+     */
+    private fun updateSpeedLabel(controlSpeed: Double) {
+        try {
+            // Get actual speed after curve reduction from SpeedSyncManager
+            val actualSpeed = io.github.mwarevn.movingsimulation.utils.SpeedSyncManager.getActualSpeed()
+            val displayText = if (actualSpeed > 0.01f) {
+                // Show "control / actual" when driving
+                "${controlSpeed.toInt()} / ${actualSpeed.toInt()} km/h"
+            } else {
+                // Show just control speed when not driving
+                "${controlSpeed.toInt()} km/h"
+            }
+            binding.speedLabel.text = displayText
+        } catch (e: Exception) {
+            // Fallback to showing just control speed
+            binding.speedLabel.text = "${controlSpeed.toInt()} km/h"
+        }
     }
 
     private fun updateReplaceLocationButtonVisibility() {
@@ -2222,6 +2268,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
                         // Track current navigation position for pause/stop functionality
                         currentNavigationPosition = position
+
+                        // Update traveled distance
+                        updateTraveledDistance(position)
+                        
+                        // Update speed label to show control/actual speeds with curve reduction
+                        try {
+                            val actualSpeed = io.github.mwarevn.movingsimulation.utils.SpeedSyncManager.getActualSpeed()
+                            if (actualSpeed > 0.01f && currentSpeed > 0) {
+                                binding.speedLabel.text = "${currentSpeed.toInt()} / ${actualSpeed.toInt()} km/h"
+                            }
+                        } catch (e: Exception) {
+                            // Silently fail if SpeedSyncManager not available
+                        }
 
                         // Update fake location circle to show current GPS position
                         fakeLocationCircle?.center = position

@@ -68,6 +68,20 @@ class XshareAntiDetection {
     val isHookMapView: Boolean
         get() = pref().getBoolean("hook_map_view", false)
 
+    // ============================================================
+    // TIER 4: ADVANCED FULL FLAVOR HOOKS (Disabled by default)
+    // These are powerful hooks for maximum bypass but require caution
+    // ============================================================
+
+    val isHookSensorSpoof: Boolean
+        get() = pref().getBoolean("hook_sensor_spoof", false)
+
+    val isHookNetworkFake: Boolean
+        get() = pref().getBoolean("hook_network_fake", false)
+
+    val isHookAdvancedRandomize: Boolean
+        get() = pref().getBoolean("hook_advanced_randomize", false)
+
     init {
         pref().reload()
     }

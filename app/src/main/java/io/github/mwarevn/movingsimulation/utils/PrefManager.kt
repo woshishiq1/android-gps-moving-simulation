@@ -45,7 +45,9 @@ object PrefManager   {
     private const val HOOK_PACKAGE_MANAGER = "hook_package_manager"
     private const val HOOK_NATIVE_LIBRARY = "hook_native_library"
     private const val HOOK_MAP_VIEW = "hook_map_view"
-
+    private const val HOOK_SENSOR_SPOOF = "hook_sensor_spoof"
+    private const val HOOK_NETWORK_FAKE = "hook_network_fake"
+    private const val HOOK_ADVANCED_RANDOMIZE = "hook_advanced_randomize"
 
     private val pref: SharedPreferences by lazy {
         try {
@@ -182,6 +184,18 @@ object PrefManager   {
         get() = pref.getBoolean(HOOK_MAP_VIEW, false)
         set(value) = pref.edit().putBoolean(HOOK_MAP_VIEW, value).apply()
     
+    var hookSensorSpoof: Boolean
+        get() = pref.getBoolean(HOOK_SENSOR_SPOOF, false)
+        set(value) = pref.edit().putBoolean(HOOK_SENSOR_SPOOF, value).apply()
+    
+    var hookNetworkFake: Boolean
+        get() = pref.getBoolean(HOOK_NETWORK_FAKE, false)
+        set(value) = pref.edit().putBoolean(HOOK_NETWORK_FAKE, value).apply()
+    
+    var hookAdvancedRandomize: Boolean
+        get() = pref.getBoolean(HOOK_ADVANCED_RANDOMIZE, false)
+        set(value) = pref.edit().putBoolean(HOOK_ADVANCED_RANDOMIZE, value).apply()
+    
     /**
      * Reset all anti-detection hooks to default safe settings
      */
@@ -204,6 +218,10 @@ object PrefManager   {
             editor.putBoolean(HOOK_PACKAGE_MANAGER, false)
             editor.putBoolean(HOOK_NATIVE_LIBRARY, false)
             editor.putBoolean(HOOK_MAP_VIEW, false)
+            // TIER 4: ADVANCED FULL FLAVOR (disabled)
+            editor.putBoolean(HOOK_SENSOR_SPOOF, false)
+            editor.putBoolean(HOOK_NETWORK_FAKE, false)
+            editor.putBoolean(HOOK_ADVANCED_RANDOMIZE, false)
             editor.apply()
         }
     }

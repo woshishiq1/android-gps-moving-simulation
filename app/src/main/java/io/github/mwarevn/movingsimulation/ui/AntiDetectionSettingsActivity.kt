@@ -183,6 +183,37 @@ class AntiDetectionSettingsActivity : AppCompatActivity() {
                     "Usually not needed for banking apps.\n\n" +
                     "Risk: LOW - But may affect Maps functionality"
         ) { PrefManager.hookMapView = it }
+
+        // TIER 4: ADVANCED FULL FLAVOR HOOKS
+        setupSwitch(
+            binding.switchSensorSpoof,
+            PrefManager.hookSensorSpoof,
+            "Full Sensor Spoof (Kalman Filter) [ADVANCED]",
+            "🚀 ADVANCED FULL FLAVOR\n\nHooks SensorManager to provide fake sensor data synchronized with spoofed location.\n\n" +
+                    "Uses Kalman filtering for accelerometer/gyroscope to make movement realistic.\n\n" +
+                    "Bypasses ML models that detect inconsistency between GPS and sensor readings.\n\n" +
+                    "Risk: MODERATE - App-level only, may affect sensor-dependent apps"
+        ) { PrefManager.hookSensorSpoof = it }
+
+        setupSwitch(
+            binding.switchNetworkFake,
+            PrefManager.hookNetworkFake,
+            "Network Full Fake (Wi-Fi/Cell) [ADVANCED]",
+            "🚀 ADVANCED FULL FLAVOR\n\nHooks WifiManager and TelephonyManager to provide fake network data.\n\n" +
+                    "Generates realistic Wi-Fi APs and cell towers matching spoofed location.\n\n" +
+                    "Prevents detection by apps checking location consistency with network.\n\n" +
+                    "Risk: MODERATE - May affect network operations, app-level only"
+        ) { PrefManager.hookNetworkFake = it }
+
+        setupSwitch(
+            binding.switchAdvancedRandomize,
+            PrefManager.hookAdvancedRandomize,
+            "Advanced Randomize (Timestamp/Speed) [ADVANCED]",
+            "🚀 ADVANCED FULL FLAVOR\n\nInjects realistic variance into GPS timestamps and speed values.\n\n" +
+                    "Uses Brownian motion for position jitter and smooth acceleration ramps.\n\n" +
+                    "Prevents detection by ML models analyzing movement patterns.\n\n" +
+                    "Risk: LOW - Pure data variance, no system-level hooks"
+        ) { PrefManager.hookAdvancedRandomize = it }
     }
 
     private fun setupSwitch(
