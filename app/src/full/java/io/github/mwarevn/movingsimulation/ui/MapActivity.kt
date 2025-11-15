@@ -74,7 +74,7 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var routePoints: List<LatLng> = emptyList()
     private var isDriving = false
     private var isPaused = false
-    private var currentSpeed = 40.0 // Default motorbike speed
+    private var currentSpeed = 52.0 // Default motorbike speed
 
     // Distance tracking
     private var totalRouteDistanceKm = 0.0 // Total route distance in kilometers
@@ -650,6 +650,22 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 }
             }
 
+        // Auto curve speed checkbox
+        binding.autoCurveSpeedCheckbox.setOnCheckedChangeListener { _, isChecked ->
+            try {
+                PrefManager.autoCurveSpeed = isChecked
+                android.util.Log.d("MapActivity", "Auto curve speed: $isChecked")
+            } catch (e: Exception) {
+                android.util.Log.e("MapActivity", "Error setting auto curve speed: ${e.message}")
+            }
+        }
+        // Load initial state
+        try {
+            binding.autoCurveSpeedCheckbox.isChecked = PrefManager.autoCurveSpeed
+        } catch (e: Exception) {
+            // Default to true if error
+            binding.autoCurveSpeedCheckbox.isChecked = true
+        }
 
         // Pause button
         binding.pauseButton.setOnClickListener {
@@ -1797,9 +1813,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isPaused = false
 
         // Reset speed to default for next trip
-        binding.speedSlider.value = 40f
-        currentSpeed = 40.0
-        binding.speedLabel.text = "40 km/h"
+        binding.speedSlider.value = 52f
+        currentSpeed = 52.0
+        binding.speedLabel.text = "52 km/h"
 
         // Hide navigation controls
         binding.navigationControlsCard.visibility = View.GONE
@@ -1859,9 +1875,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routePoints = emptyList()
 
         // Reset speed to default for next trip
-        binding.speedSlider.value = 40f
-        currentSpeed = 40.0
-        binding.speedLabel.text = "40 km/h"
+        binding.speedSlider.value = 52f
+        currentSpeed = 52.0
+        binding.speedLabel.text = "52 km/h"
 
         // Reset UI
         currentMode = AppMode.SEARCH
@@ -2145,9 +2161,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.completionActionsCard.visibility = View.GONE
 
         // Reset speed to default for next trip
-        binding.speedSlider.value = 40f
-        currentSpeed = 40.0
-        binding.speedLabel.text = "40 km/h"
+        binding.speedSlider.value = 52f
+        currentSpeed = 52.0
+        binding.speedLabel.text = "52 km/h"
 
         // Clear route and route-related markers, but keep fake location circle and marker
         routePolyline?.remove()
@@ -2327,9 +2343,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         isPaused = false
 
         // Reset speed to default for next trip
-        binding.speedSlider.value = 40f
-        currentSpeed = 40.0
-        binding.speedLabel.text = "40 km/h"
+        binding.speedSlider.value = 52f
+        currentSpeed = 52.0
+        binding.speedLabel.text = "52 km/h"
 
         // Get the current position from tracked navigation position
         val currentPosition = currentNavigationPosition

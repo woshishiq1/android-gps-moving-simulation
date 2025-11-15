@@ -16,14 +16,14 @@ import kotlinx.coroutines.*
  */
 class RouteSimulator(
     private val points: List<LatLng>,
-    private var speedKmh: Double = 45.0, // Default motorbike speed
+    private var speedKmh: Double = 52.0, // Default motorbike speed
     private val updateIntervalMs: Long = 300L, // Optimized: 300ms for better performance (was 100ms)
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
 
     companion object {
         const val MIN_SPEED_KMH = 0.0      // Minimum speed (stationary)
-        const val MAX_SPEED_KMH = 350.0    // Maximum speed (350 km/h - high-speed vehicles)
+        const val MAX_SPEED_KMH = 400.0    // Maximum speed (400 km/h - high-speed vehicles)
         const val SPEED_STEP_KMH = 2.0     // Speed step increment (2 km/h)
 
         // Curve detection and speed adjustment
@@ -40,7 +40,7 @@ class RouteSimulator(
     private val maxUpdateInterval = 350L  // Max GPS update interval (350ms, was 120ms)
 
     // Speed management - save user speed and apply curve reduction
-    private var savedSpeedKmh = 45.0      // Original user-set speed (preserved when curves reduce speed)
+    private var savedSpeedKmh = 52.0      // Original user-set speed (preserved when curves reduce speed)
 
     // Curve detection state
     private var currentCurveReduction = 1.0  // 1.0 = normal speed, 0.5 = 50% speed reduction
@@ -101,11 +101,24 @@ class RouteSimulator(
 
     /**
      * Detect curve angle and calculate realistic speed reduction
-     * Implements smooth braking BEFORE curve, slow through curve, smooth acceleration AFTER
-     *
-     * Simpler approach: Just reduce speed based on angle magnitude
+     * Only applies if autoCurveSpeed is enabled in preferences
+     * Now uses DISTANCE-BASED lookahead instead of just segment count
+     * Looks ahead 100-150 meters to predict curves early
      */
-    private fun detectCurveAndReduceSpeed(from: LatLng, to: LatLng, next: LatLng?): Double {
+    private fun detectCurveAndReduceSpeed(from: LatLng, to: LatLng, next: LatLng?, ahead: LatLng? = null): Double {
+        // Check if auto curve speed is enabled
+        val autoCurveEnabled = try {
+            io.github.mwarevn.movingsimulation.utils.PrefManager.autoCurveSpeed
+        } catch (e: Throwable) {
+            true  // Default to enabled
+        }
+
+        // If auto curve is disabled, always return 1.0 (no reduction)
+        if (!autoCurveEnabled) {
+            currentCurveReduction = 1.0
+            return 1.0
+        }
+
         if (next == null) {
             // No next point - gradual recovery
             currentCurveReduction = minOf(1.0, currentCurveReduction + 0.15)
@@ -115,27 +128,80 @@ class RouteSimulator(
         val bearing1 = calculateBearing(from, to)
         val bearing2 = calculateBearing(to, next)
 
-        // Calculate angle difference (curve angle)
+        // Calculate angle difference (curve angle) for CURRENT segment
         var angleDiff = bearing2 - bearing1
         // Normalize to -180 to 180 range
         if (angleDiff > 180) angleDiff -= 360
         if (angleDiff < -180) angleDiff += 360
         angleDiff = Math.abs(angleDiff)
 
-        // Calculate target reduction based on angle
+        // PREDICTIVE LOGIC: Also check the curve AFTER next point (lookahead 2 segments)
+        // This allows us to start braking BEFORE entering the main curve
+        var maxAngleDiff = angleDiff
+        if (ahead != null) {
+            val bearing3 = calculateBearing(next, ahead)
+            var nextAngleDiff = bearing3 - bearing2
+            if (nextAngleDiff > 180) nextAngleDiff -= 360
+            if (nextAngleDiff < -180) nextAngleDiff += 360
+            nextAngleDiff = Math.abs(nextAngleDiff)
+            
+            // Use the maximum angle diff from current and next curve
+            // This ensures we slow down for the WORST upcoming curve
+            maxAngleDiff = maxOf(angleDiff, nextAngleDiff)
+        }
+
+        // Calculate target reduction based on angle (now with lookahead)
         // More angle = more reduction (larger curve = slower)
         val targetReduction = when {
-            angleDiff < 20.0 -> 1.0      // No curve
-            angleDiff < 40.0 -> 0.85     // Slight curve
-            angleDiff < 60.0 -> 0.75     // Moderate curve
-            angleDiff < 90.0 -> 0.65     // Significant curve
-            else -> 0.50                  // Sharp turn
+            maxAngleDiff < 20.0 -> 1.0      // No curve
+            maxAngleDiff < 40.0 -> 0.85     // Slight curve
+            maxAngleDiff < 60.0 -> 0.75     // Moderate curve
+            maxAngleDiff < 90.0 -> 0.65     // Significant curve
+            else -> 0.50                     // Sharp turn
         }
 
         // Smooth transition to target (85% old + 15% new)
         currentCurveReduction = currentCurveReduction * 0.85 + targetReduction * 0.15
 
         return currentCurveReduction
+    }
+
+    /**
+     * Scan ahead in route points to find worst curve within distance threshold
+     * Used for distance-based lookahead when checking multiple curves
+     * @param startIdx Starting point index
+     * @param maxDistanceMeters How far ahead to look (default 100-150m)
+     * @return Maximum angle difference found within distance
+     */
+    private fun findWorstCurveAhead(startIdx: Int, maxDistanceMeters: Double = 120.0): Double {
+        if (startIdx + 2 >= points.size) return 0.0
+        
+        var maxAngle = 0.0
+        var distanceCovered = 0.0
+        
+        var idx = startIdx
+        while (idx + 2 < points.size && distanceCovered < maxDistanceMeters) {
+            val ptA = points[idx]
+            val ptB = points[idx + 1]
+            val ptC = points[idx + 2]
+            
+            val segDistance = PolylineUtils.haversineDistanceMeters(ptA, ptB)
+            distanceCovered += segDistance
+            
+            // Calculate angle at this point
+            val bearing1 = calculateBearing(ptA, ptB)
+            val bearing2 = calculateBearing(ptB, ptC)
+            
+            var angleDiff = bearing2 - bearing1
+            if (angleDiff > 180) angleDiff -= 360
+            if (angleDiff < -180) angleDiff += 360
+            angleDiff = Math.abs(angleDiff)
+            
+            maxAngle = maxOf(maxAngle, angleDiff)
+            idx++
+        }
+        
+        return maxAngle
     }
 
     fun start(onPosition: (LatLng) -> Unit = {}, onComplete: (() -> Unit)? = null) {
@@ -159,6 +225,7 @@ class RouteSimulator(
                 val a = points[idx]
                 val b = points[idx + 1]
                 val c = if (idx + 2 < points.size) points[idx + 2] else null  // Next segment for curve detection
+                val d = if (idx + 3 < points.size) points[idx + 3] else null  // Lookahead for predictive braking
 
                 val segMeters = PolylineUtils.haversineDistanceMeters(a, b)
 
@@ -177,19 +244,41 @@ class RouteSimulator(
                     }
 
                     // Detect curve AND UPDATE reduction EVERY iteration (important!)
-                    val curveSpeedReduction = detectCurveAndReduceSpeed(a, b, c)
+                    // Now with lookahead to predict curves BEFORE entering them
+                    val curveSpeedReduction = detectCurveAndReduceSpeed(a, b, c, d)
+
+                    // DISTANCE-BASED LOOKAHEAD: For routes with many tight curves
+                    // Check what's ahead within 100-150 meters
+                    // If we find a worse curve ahead, use that for speed reduction
+                    val worstCurveAhead = findWorstCurveAhead(idx, maxDistanceMeters = 120.0)
+                    val targetReductionFromLookahead = when {
+                        worstCurveAhead < 20.0 -> 1.0      // No curve
+                        worstCurveAhead < 40.0 -> 0.85     // Slight curve
+                        worstCurveAhead < 60.0 -> 0.75     // Moderate curve
+                        worstCurveAhead < 90.0 -> 0.65     // Significant curve
+                        else -> 0.50                        // Sharp turn
+                    }
+                    
+                    // Use the MORE CONSERVATIVE reduction (lower speed)
+                    // This ensures we're always prepared for worst case ahead
+                    val finalCurveReduction = minOf(curveSpeedReduction, targetReductionFromLookahead)
+
+                    // Calculate and sync bearing to match actual movement direction
+                    val currentBearing = calculateBearing(a, b)
+                    SpeedSyncManager.updateBearing(currentBearing.toFloat())
 
                     // Generate realistic update interval
                     val currentUpdateInterval = getRealisticUpdateInterval()
 
                     // Calculate current speed with curve reduction applied
                     // This makes speed automatically reduce on curves to look realistic
-                    val adjustedSpeedKmh = speedKmh * curveSpeedReduction
+                    // Use FINAL reduction (which includes distance-based lookahead)
+                    val adjustedSpeedKmh = speedKmh * finalCurveReduction
 
                     // Sync actual simulation speed with Xposed hooks via SpeedSyncManager
                     SpeedSyncManager.setControlSpeed(speedKmh.toFloat())  // Control speed (constant)
                     SpeedSyncManager.updateActualSpeed(adjustedSpeedKmh.toFloat())  // Actual speed (varies with curves)
-                    SpeedSyncManager.updateCurveReduction(curveSpeedReduction.toFloat())  // Curve factor for sensors
+                    SpeedSyncManager.updateCurveReduction(finalCurveReduction.toFloat())  // Curve factor for sensors
 
                     val currentSpeedMs = adjustedSpeedKmh * 1000.0 / 3600.0
                     val stepMeters = currentSpeedMs * (currentUpdateInterval.toDouble() / 1000.0)

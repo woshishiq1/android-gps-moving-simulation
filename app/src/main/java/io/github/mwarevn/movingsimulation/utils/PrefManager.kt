@@ -48,6 +48,7 @@ object PrefManager   {
     private const val HOOK_SENSOR_SPOOF = "hook_sensor_spoof"
     private const val HOOK_NETWORK_FAKE = "hook_network_fake"
     private const val HOOK_ADVANCED_RANDOMIZE = "hook_advanced_randomize"
+    private const val AUTO_CURVE_SPEED = "auto_curve_speed"
 
     private val pref: SharedPreferences by lazy {
         try {
@@ -195,6 +196,11 @@ object PrefManager   {
     var hookAdvancedRandomize: Boolean
         get() = pref.getBoolean(HOOK_ADVANCED_RANDOMIZE, false)
         set(value) = pref.edit().putBoolean(HOOK_ADVANCED_RANDOMIZE, value).apply()
+    
+    // Auto curve speed - automatically reduce speed when taking curves
+    var autoCurveSpeed: Boolean
+        get() = pref.getBoolean(AUTO_CURVE_SPEED, true)
+        set(value) = pref.edit().putBoolean(AUTO_CURVE_SPEED, value).apply()
     
     /**
      * Reset all anti-detection hooks to default safe settings

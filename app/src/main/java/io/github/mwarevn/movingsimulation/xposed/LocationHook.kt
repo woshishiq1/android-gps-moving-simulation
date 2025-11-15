@@ -58,7 +58,18 @@ object LocationHook {
             newlng =
                 if (settings.isRandomPosition) settings.getLng + (dlng * 180.0 / pi) else settings.getLng
             accuracy = settings.accuracy!!.toFloat()
-            bearing = settings.getBearing
+            
+            // Get synchronized bearing from SpeedSyncManager (for route navigation)
+            // or fallback to user-set bearing when not navigating
+            val syncedBearing = SpeedSyncManager.getBearing()
+            bearing = if (syncedBearing > 0.01f || settings.isStarted) {
+                // If navigation is active (SpeedSyncManager has bearing > 0), use synced bearing
+                // This ensures GPS bearing matches actual movement direction
+                syncedBearing
+            } else {
+                // Otherwise use user-set bearing from UI settings
+                settings.getBearing
+            }
             
             // Get actual speed from RouteSimulator via SpeedSyncManager
             // This syncs with actual movement speed (including curve reduction)
@@ -69,6 +80,11 @@ object LocationHook {
             } else {
                 // Fallback to settings speed when simulation is not active
                 settings.getSpeed
+            }
+
+            // Debug logging - show what speed was set
+            if (syncedSpeed > 0.01f && mLastUpdated % 3000L < 500L) {  // Log every ~3 seconds
+                XposedBridge.log("LocationHook: Speed=${String.format("%.1f", syncedSpeed)} km/h (${String.format("%.2f", speed)} m/s), Reduction=${String.format("%.2f", SpeedSyncManager.getCurveReduction())}")
             }
 
         } catch (e: Exception) {

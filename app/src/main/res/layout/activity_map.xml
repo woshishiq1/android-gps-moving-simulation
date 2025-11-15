@@ -272,14 +272,41 @@
 
                 </LinearLayout>
 
+                <!-- Auto Curve Speed Toggle -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
+
+                    <com.google.android.material.checkbox.MaterialCheckBox
+                        android:id="@+id/auto_curve_speed_checkbox"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true"/>
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Tốc độ cua tự động"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:layout_marginStart="8dp"/>
+
+                </LinearLayout>
+
                 <!-- Compact Speed Slider -->
                 <com.google.android.material.slider.Slider
                     android:id="@+id/speed_slider"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:valueFrom="0"
-                    android:valueTo="350"
-                    android:value="40"
+                    android:valueTo="400"
+                    android:value="52"
                     android:stepSize="2"
                     android:layout_marginTop="-8dp"
                     android:layout_marginBottom="-8dp"/>

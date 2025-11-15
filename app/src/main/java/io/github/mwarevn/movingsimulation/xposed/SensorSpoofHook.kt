@@ -296,24 +296,38 @@ object SensorSpoofHook {
             val currentTime = System.currentTimeMillis()
             val timeDeltaSec = maxOf(0.1f, (currentTime - prevTime) / 1000f)
 
-            // Calculate delta position in meters
+            // Calculate delta position in meters from actual location
             val deltaMeters = calculateDistanceMeters(prevLat, prevLng, lastSpoofedLat, lastSpoofedLng)
 
             // Get curve reduction factor from SpeedSyncManager
             // On curves, acceleration is reduced proportionally
             val curveReduction = SpeedSyncManager.getCurveReduction()
 
-            // Estimate acceleration: a = 2 * distance / time²
-            // This gives realistic acceleration magnitude
-            var accelMagnitude = if (timeDeltaSec > 0) {
-                (2f * deltaMeters / (timeDeltaSec * timeDeltaSec)).coerceIn(-50f, 50f)
+            // CRITICAL FIX: Calculate acceleration using ACTUAL SPEED to ensure sensor data matches location data
+            // Expected distance = actualSpeed (km/h) × time (seconds) / 3600 × 1000
+            val expectedDistanceMeters = if (actualSpeed > 0.01f && timeDeltaSec > 0) {
+                // Convert km/h to m/s: km/h × 1000m/km ÷ 3600s/h = m/s
+                val speedMs = actualSpeed * 1000f / 3600f
+                speedMs * timeDeltaSec
             } else {
                 0f
             }
 
-            // Apply curve reduction to acceleration
-            // Sharp curves reduce acceleration proportionally (realistic vehicle dynamics)
-            accelMagnitude *= curveReduction
+            // Use actual distance from location (which already has curve reduction baked in)
+            // If there's significant mismatch, it indicates timing or synchronization issue
+            val distanceForAccel = if (deltaMeters > 0.01f) deltaMeters else expectedDistanceMeters
+
+            // Calculate acceleration: a = 2 * distance / time²
+            // Using actual movement distance to ensure sensor matches location
+            var accelMagnitude = if (timeDeltaSec > 0 && distanceForAccel > 0) {
+                (2f * distanceForAccel / (timeDeltaSec * timeDeltaSec)).coerceIn(-50f, 50f)
+            } else {
+                0f
+            }
+
+            // Curve reduction already applied to location position, so acceleration matches
+            // Don't apply curve reduction again - it's already in the distance calculation
+            // accelMagnitude is already consistent with actual speed
 
             // Distribute acceleration across 3 axes realistically
             // X and Y axes contain horizontal acceleration
@@ -406,7 +420,10 @@ object SensorSpoofHook {
                     currentBearing = (Math.toDegrees(bearingRad).toFloat() + 360) % 360
                     lastBearingUpdate = currentTime
 
-                    XposedBridge.log("$TAG: Updated bearing to ${currentBearing}°")
+                    // Verify bearing sync: Compare with SpeedSyncManager bearing
+                    val syncedBearing = SpeedSyncManager.getBearing()
+                    val bearingDiff = kotlin.math.abs(currentBearing - syncedBearing)
+                    XposedBridge.log("$TAG: Bearing - Magnetometer: ${currentBearing}°, Synced: ${syncedBearing}°, Diff: ${bearingDiff}°")
                 }
             }
 
