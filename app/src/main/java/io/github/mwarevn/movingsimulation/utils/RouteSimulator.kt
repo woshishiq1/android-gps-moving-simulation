@@ -93,17 +93,58 @@ class RouteSimulator(
     private fun calculateBearing(from: LatLng, to: LatLng): Double {
         val dLng = to.longitude - from.longitude
         val y = Math.sin(Math.toRadians(dLng)) * Math.cos(Math.toRadians(to.latitude))
-        val x = Math.cos(Math.toRadians(from.latitude)) * Math.sin(Math.toRadians(to.latitude)) -
-                Math.sin(Math.toRadians(from.latitude)) * Math.cos(Math.toRadians(to.latitude)) * Math.cos(Math.toRadians(dLng))
+        val x = Math.cos(Math.toRadians(from.latitude)) * Math.sin(Math.toRadians(to.latitude)) - Math.sin(Math.toRadians(from.latitude)) * Math.cos(Math.toRadians(to.latitude)) * Math.cos(Math.toRadians(dLng))
         val bearing = Math.toDegrees(Math.atan2(y, x))
         return (bearing + 360) % 360  // Normalize to 0-360
     }
 
     /**
+     * Scan ahead in route points to accumulate total angle change within distance threshold
+     * Used for smoother detection of multiple consecutive curves
+     * @param startIdx Starting point index
+     * @param maxDistanceMeters How far ahead to look (default 100m)
+     * @return Total accumulated angle change within distance (degrees)
+     */
+    private fun findTotalAngleAhead(startIdx: Int, maxDistanceMeters: Double = 100.0): Double {
+        if (startIdx + 2 >= points.size) return 0.0
+
+        var totalAngle = 0.0
+        var distanceCovered = 0.0
+        var segmentCount = 0
+
+        var idx = startIdx
+        while (idx + 2 < points.size && distanceCovered < maxDistanceMeters) {
+            val ptA = points[idx]
+            val ptB = points[idx + 1]
+            val ptC = points[idx + 2]
+
+            val segDistance = PolylineUtils.haversineDistanceMeters(ptA, ptB)
+            distanceCovered += segDistance
+
+            // Calculate angle at this point
+            val bearing1 = calculateBearing(ptA, ptB)
+            val bearing2 = calculateBearing(ptB, ptC)
+
+            var angleDiff = bearing2 - bearing1
+            if (angleDiff > 180) angleDiff -= 360
+            if (angleDiff < -180) angleDiff += 360
+            angleDiff = Math.abs(angleDiff)
+
+            totalAngle += angleDiff
+            segmentCount++
+            idx++
+        }
+
+        // Normalize by distance (angle density per 100m) for consistent scaling
+        val angleDensity = if (distanceCovered > 0) totalAngle * (100.0 / distanceCovered) else 0.0
+
+        return angleDensity
+    }
+
+    /**
      * Detect curve angle and calculate realistic speed reduction
      * Only applies if autoCurveSpeed is enabled in preferences
-     * Now uses DISTANCE-BASED lookahead instead of just segment count
-     * Looks ahead 100-150 meters to predict curves early
+     * Enhanced for multiple consecutive curves with angle accumulation
      */
     private fun detectCurveAndReduceSpeed(from: LatLng, to: LatLng, next: LatLng?, ahead: LatLng? = null): Double {
         // Check if auto curve speed is enabled
@@ -144,7 +185,7 @@ class RouteSimulator(
             if (nextAngleDiff > 180) nextAngleDiff -= 360
             if (nextAngleDiff < -180) nextAngleDiff += 360
             nextAngleDiff = Math.abs(nextAngleDiff)
-            
+
             // Use the maximum angle diff from current and next curve
             // This ensures we slow down for the WORST upcoming curve
             maxAngleDiff = maxOf(angleDiff, nextAngleDiff)
@@ -164,44 +205,6 @@ class RouteSimulator(
         currentCurveReduction = currentCurveReduction * 0.85 + targetReduction * 0.15
 
         return currentCurveReduction
-    }
-
-    /**
-     * Scan ahead in route points to find worst curve within distance threshold
-     * Used for distance-based lookahead when checking multiple curves
-     * @param startIdx Starting point index
-     * @param maxDistanceMeters How far ahead to look (default 100-150m)
-     * @return Maximum angle difference found within distance
-     */
-    private fun findWorstCurveAhead(startIdx: Int, maxDistanceMeters: Double = 120.0): Double {
-        if (startIdx + 2 >= points.size) return 0.0
-        
-        var maxAngle = 0.0
-        var distanceCovered = 0.0
-        
-        var idx = startIdx
-        while (idx + 2 < points.size && distanceCovered < maxDistanceMeters) {
-            val ptA = points[idx]
-            val ptB = points[idx + 1]
-            val ptC = points[idx + 2]
-            
-            val segDistance = PolylineUtils.haversineDistanceMeters(ptA, ptB)
-            distanceCovered += segDistance
-            
-            // Calculate angle at this point
-            val bearing1 = calculateBearing(ptA, ptB)
-            val bearing2 = calculateBearing(ptB, ptC)
-            
-            var angleDiff = bearing2 - bearing1
-            if (angleDiff > 180) angleDiff -= 360
-            if (angleDiff < -180) angleDiff += 360
-            angleDiff = Math.abs(angleDiff)
-            
-            maxAngle = maxOf(maxAngle, angleDiff)
-            idx++
-        }
-        
-        return maxAngle
     }
 
     fun start(onPosition: (LatLng) -> Unit = {}, onComplete: (() -> Unit)? = null) {
@@ -243,25 +246,26 @@ class RouteSimulator(
                         continue
                     }
 
+
                     // Detect curve AND UPDATE reduction EVERY iteration (important!)
                     // Now with lookahead to predict curves BEFORE entering them
                     val curveSpeedReduction = detectCurveAndReduceSpeed(a, b, c, d)
 
-                    // DISTANCE-BASED LOOKAHEAD: For routes with many tight curves
-                    // Check what's ahead within 100-150 meters
-                    // If we find a worse curve ahead, use that for speed reduction
-                    val worstCurveAhead = findWorstCurveAhead(idx, maxDistanceMeters = 120.0)
-                    val targetReductionFromLookahead = when {
-                        worstCurveAhead < 20.0 -> 1.0      // No curve
-                        worstCurveAhead < 40.0 -> 0.85     // Slight curve
-                        worstCurveAhead < 60.0 -> 0.75     // Moderate curve
-                        worstCurveAhead < 90.0 -> 0.65     // Significant curve
-                        else -> 0.50                        // Sharp turn
+                    // DISTANCE-BASED ACCUMULATION LOOKAHEAD: For routes with many tight curves
+                    // Check what's ahead within 100 meters for accumulated angle density
+                    // Reduce speed proactively for series of curves close together
+                    val accumulatedAngleDensityAhead = findTotalAngleAhead(idx, maxDistanceMeters = 100.0)
+                    val targetReductionFromAccumulation = when {
+                        accumulatedAngleDensityAhead < 50.0 -> 1.0      // Low density, no reduction
+                        accumulatedAngleDensityAhead < 100.0 -> 0.85     // Slight accumulation
+                        accumulatedAngleDensityAhead < 200.0 -> 0.75     // Moderate accumulation
+                        accumulatedAngleDensityAhead < 300.0 -> 0.65     // Significant accumulation
+                        else -> 0.50                                       // Very high accumulation
                     }
-                    
-                    // Use the MORE CONSERVATIVE reduction (lower speed)
-                    // This ensures we're always prepared for worst case ahead
-                    val finalCurveReduction = minOf(curveSpeedReduction, targetReductionFromLookahead)
+
+                    // Use the MORE CONSERVATIVE reduction from either immediate curve or accumulated ahead
+                    // This ensures smooth speed reduction for multiple consecutive tight curves
+                    val finalCurveReduction = minOf(curveSpeedReduction, targetReductionFromAccumulation)
 
                     // Calculate and sync bearing to match actual movement direction
                     val currentBearing = calculateBearing(a, b)
@@ -272,7 +276,6 @@ class RouteSimulator(
 
                     // Calculate current speed with curve reduction applied
                     // This makes speed automatically reduce on curves to look realistic
-                    // Use FINAL reduction (which includes distance-based lookahead)
                     val adjustedSpeedKmh = speedKmh * finalCurveReduction
 
                     // Sync actual simulation speed with Xposed hooks via SpeedSyncManager
