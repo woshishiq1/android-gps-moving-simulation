@@ -208,13 +208,15 @@
                 android:orientation="vertical"
                 android:padding="12dp">
 
-                <!-- Distance & Speed Row - Compact horizontal layout -->
+                <!-- Collapsed Header (always visible) - with toggle button -->
                 <LinearLayout
+                    android:id="@+id/nav_controls_header"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="6dp">
+                    android:layout_marginBottom="6dp"
+                    android:background="?attr/selectableItemBackground">
 
                     <!-- Distance Display -->
                     <TextView
@@ -236,60 +238,80 @@
                         android:text="40 km/h"
                         android:textSize="13sp"
                         android:textStyle="bold"
-                        android:gravity="end"/>
+                        android:gravity="end"
+                        android:layout_marginEnd="8dp"/>
+
+                    <!-- Toggle Expand/Collapse Button -->
+                    <ImageButton
+                        android:id="@+id/nav_controls_toggle"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:src="@drawable/ic_expand_less"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Thu nhỏ/Mở rộng"
+                        android:padding="4dp"
+                        app:tint="?attr/colorOnSurface"/>
 
                 </LinearLayout>
 
-                <!-- Route Info - From/To addresses -->
+                <!-- Expandable Content (can be collapsed) -->
                 <LinearLayout
+                    android:id="@+id/nav_controls_expandable"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:layout_marginBottom="4dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp">
+                    android:visibility="visible">
 
-                    <TextView
-                        android:id="@+id/nav_from_address"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="• Đang tải..."
-                        android:textSize="11sp"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:layout_marginBottom="2dp"/>
-
-                    <TextView
-                        android:id="@+id/nav_to_address"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="• Đang tải..."
-                        android:textSize="11sp"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:maxLines="1"
-                        android:ellipsize="end"/>
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <!-- Auto Curve Speed Toggle -->
+                    <!-- Route Info - From/To addresses -->
                     <LinearLayout
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:orientation="vertical"
+                        android:layout_marginBottom="4dp"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp">
 
-                        <com.google.android.material.checkbox.MaterialCheckBox
-                            android:id="@+id/auto_curve_speed_checkbox"
+                        <TextView
+                            android:id="@+id/nav_from_address"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="• Đang tải..."
+                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:maxLines="1"
+                            android:ellipsize="end"
+                            android:layout_marginBottom="2dp"/>
+
+                        <TextView
+                            android:id="@+id/nav_to_address"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="• Đang tải..."
+                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:maxLines="1"
+                            android:ellipsize="end"/>
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <!-- Auto Curve Speed Toggle -->
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Auto speed"
-                            android:checked="true"/>
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/auto_curve_speed_checkbox"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Auto speed"
+                                android:checked="true"/>
 
 <!--                        <TextView-->
 <!--                            android:layout_width="0dp"-->
@@ -299,84 +321,86 @@
 <!--                            android:textSize="11sp"-->
 <!--                            android:textColor="?attr/colorOnSurface"/>-->
 
+                        </LinearLayout>
+
+                        <!-- Compact Speed Slider -->
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/speed_slider"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="0"
+                            android:valueTo="400"
+                            android:value="52"
+                            android:stepSize="2"
+                            android:layout_marginTop="-8dp"
+                            android:layout_marginBottom="-8dp"/>
+
                     </LinearLayout>
 
-                    <!-- Compact Speed Slider -->
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/speed_slider"
+                    <!-- Compact Control Buttons -->
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:valueFrom="0"
-                        android:valueTo="400"
-                        android:value="52"
-                        android:stepSize="2"
-                        android:layout_marginTop="-8dp"
-                        android:layout_marginBottom="-8dp"/>
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:layout_marginTop="4dp">
 
-                </LinearLayout>
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/pause_button"
+                            style="@style/Widget.Material3.Button.TonalButton.Icon"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:text="Tạm dừng"
+                            android:textSize="13sp"
+                            android:minHeight="48dp"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            app:icon="@drawable/ic_pause"
+                            app:iconSize="20dp"
+                            app:iconPadding="8dp"
+                            app:cornerRadius="24dp"/>
 
-                <!-- Compact Control Buttons -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:layout_marginTop="4dp">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/resume_button"
+                            style="@style/Widget.Material3.Button.TonalButton.Icon"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:text="Tiếp tục"
+                            android:textSize="13sp"
+                            android:minHeight="48dp"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:visibility="gone"
+                            app:icon="@drawable/ic_play"
+                            app:iconSize="20dp"
+                            app:iconPadding="8dp"
+                            app:cornerRadius="24dp"/>
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/pause_button"
-                        style="@style/Widget.Material3.Button.TonalButton.Icon"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
-                        android:text="Tạm dừng"
-                        android:textSize="13sp"
-                        android:minHeight="48dp"
-                        android:paddingStart="12dp"
-                        android:paddingEnd="12dp"
-                        app:icon="@drawable/ic_pause"
-                        app:iconSize="20dp"
-                        app:iconPadding="8dp"
-                        app:cornerRadius="24dp"/>
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/stop_button"
+                            style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:text="Dừng"
+                            android:textSize="13sp"
+                            android:minHeight="48dp"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:visibility="gone"
+                            app:icon="@drawable/ic_stop"
+                            app:iconSize="20dp"
+                            app:iconPadding="8dp"
+                            app:cornerRadius="24dp"
+                            app:strokeColor="?attr/colorError"
+                            android:textColor="?attr/colorError"
+                            app:iconTint="?attr/colorError"/>
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/resume_button"
-                        style="@style/Widget.Material3.Button.TonalButton.Icon"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
-                        android:text="Tiếp tục"
-                        android:textSize="13sp"
-                        android:minHeight="48dp"
-                        android:paddingStart="12dp"
-                        android:paddingEnd="12dp"
-                        android:visibility="gone"
-                        app:icon="@drawable/ic_play"
-                        app:iconSize="20dp"
-                        app:iconPadding="8dp"
-                        app:cornerRadius="24dp"/>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/stop_button"
-                        style="@style/Widget.Material3.Button.OutlinedButton.Icon"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:text="Dừng"
-                        android:textSize="13sp"
-                        android:minHeight="48dp"
-                        android:paddingStart="12dp"
-                        android:paddingEnd="12dp"
-                        android:visibility="gone"
-                        app:icon="@drawable/ic_stop"
-                        app:iconSize="20dp"
-                        app:iconPadding="8dp"
-                        app:cornerRadius="24dp"
-                        app:strokeColor="?attr/colorError"
-                        android:textColor="?attr/colorError"
-                        app:iconTint="?attr/colorError"/>
+                    </LinearLayout>
 
                 </LinearLayout>
 

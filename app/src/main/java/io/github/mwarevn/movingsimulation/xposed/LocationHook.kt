@@ -60,25 +60,25 @@ object LocationHook {
             accuracy = settings.accuracy!!.toFloat()
             
             // Get synchronized bearing from SpeedSyncManager (for route navigation)
-            // or fallback to user-set bearing when not navigating
+            // CRITICAL FIX: Always use synced bearing when GPS is started
             val syncedBearing = SpeedSyncManager.getBearing()
-            bearing = if (syncedBearing > 0.01f || settings.isStarted) {
-                // If navigation is active (SpeedSyncManager has bearing > 0), use synced bearing
-                // This ensures GPS bearing matches actual movement direction
+            bearing = if (settings.isStarted) {
+                // When GPS is active, ALWAYS use synced bearing from RouteSimulator
+                // This ensures bearing matches actual movement direction perfectly
                 syncedBearing
             } else {
-                // Otherwise use user-set bearing from UI settings
+                // Only when GPS is completely off, use user-set bearing
                 settings.getBearing
             }
             
             // Get actual speed from RouteSimulator via SpeedSyncManager
             // This syncs with actual movement speed (including curve reduction)
             val syncedSpeed = SpeedSyncManager.getActualSpeed()
-            speed = if (syncedSpeed > 0.01f) {
-                // If RouteSimulator is running, use actual simulation speed
+            speed = if (settings.isStarted && syncedSpeed >= 0f) {
+                // When GPS is active, use actual simulation speed (can be 0 when stationary)
                 SpeedSyncManager.speedKmhToMs(syncedSpeed)
             } else {
-                // Fallback to settings speed when simulation is not active
+                // Only when GPS is off, use settings speed
                 settings.getSpeed
             }
 
@@ -90,6 +90,33 @@ object LocationHook {
         } catch (e: Exception) {
             // Silently fail - don't use context.packageName as it may crash early
             // Timber.tag("GPS Setter").e(e, "Failed to get XposedSettings")
+        }
+    }
+    
+    /**
+     * CRITICAL HELPER: Set Location fields with proper internal flags
+     * This ensures Google Maps displays speed/bearing correctly
+     */
+    private fun setLocationFieldsWithFlags(location: Location) {
+        try {
+            // Set hasSpeed and hasBearing flags using reflection
+            val locationClass = Location::class.java
+            val setFieldsMaskMethod = locationClass.getDeclaredMethod("setFieldsMask", Int::class.javaPrimitiveType)
+            setFieldsMaskMethod.isAccessible = true
+            
+            // Location field masks (from Android source code)
+            val HAS_LAT_LONG_BIT = 1
+            val HAS_ALTITUDE_BIT = 2
+            val HAS_SPEED_BIT = 4
+            val HAS_BEARING_BIT = 8
+            val HAS_ACCURACY_BIT = 16
+            
+            val fieldsMask = HAS_LAT_LONG_BIT or HAS_ALTITUDE_BIT or HAS_SPEED_BIT or 
+                            HAS_BEARING_BIT or HAS_ACCURACY_BIT
+            setFieldsMaskMethod.invoke(location, fieldsMask)
+        } catch (e: Throwable) {
+            // Flags setting failed - Location object might still work without explicit flags
+            // on some Android versions
         }
     }
 
@@ -128,9 +155,8 @@ object LocationHook {
     @SuppressLint("NewApi")
     private fun hookSystemServer(lpparam: XC_LoadPackage.LoadPackageParam) {
         try {
-            if (System.currentTimeMillis() - mLastUpdated > 200) {
-                updateLocation()
-            }
+            // Note: updateLocation() is called in each hook method for real-time bearing
+            // No need to pre-call here
 
             if (Build.VERSION.SDK_INT < 34) {
 
@@ -144,15 +170,35 @@ object LocationHook {
                     LocationRequest::class.java, String::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
+                            // CRITICAL: Force update to get FRESH bearing and speed
+                            updateLocation()
+                            
                             val location = Location(LocationManager.GPS_PROVIDER)
-                            location.time = System.currentTimeMillis() - 300
+                            // CRITICAL FIX: ALWAYS use fresh timestamps (not cached)
+                            location.time = System.currentTimeMillis()
+                            location.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                            
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
+                            
+                            // CRITICAL: Set speed and bearing
                             location.speed = speed
                             location.bearing = bearing
-                            location.accuracy = accuracy
-                            location.speedAccuracyMetersPerSecond = 0F
+                            
+                            // Ensure accuracy is valid (5-20m is realistic for GPS)
+                            location.accuracy = accuracy.coerceIn(5f, 20f)
+                            location.speedAccuracyMetersPerSecond = 0.5F
+                            location.bearingAccuracyDegrees = 10f
+                            
+                            // CRITICAL: Set hasSpeed/hasBearing flags for Google Maps
+                            setLocationFieldsWithFlags(location)
+                            
+                            // Add GPS extras for better validity
+                            val extras = android.os.Bundle()
+                            extras.putInt("satellites", 12)
+                            location.extras = extras
+                            
                             param.result = location
                         }
                     }
@@ -183,27 +229,39 @@ object LocationHook {
                     Location::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
+                            // CRITICAL: Force update to get FRESH bearing and speed
+                            updateLocation()
+                            
                             lateinit var location: Location
-                            lateinit var originLocation: Location
                             if (param.args[0] == null) {
                                 location = Location(LocationManager.GPS_PROVIDER)
-                                location.time = System.currentTimeMillis() - 300
                             } else {
-                                originLocation = param.args[0] as Location
+                                val originLocation = param.args[0] as Location
                                 location = Location(originLocation.provider)
-                                location.time = originLocation.time
-                                location.accuracy = accuracy
-                                location.bearing = bearing
-                                location.bearingAccuracyDegrees = originLocation.bearingAccuracyDegrees
-                                location.elapsedRealtimeNanos = originLocation.elapsedRealtimeNanos
                                 location.verticalAccuracyMeters = originLocation.verticalAccuracyMeters
                             }
+                            
+                            // CRITICAL: ALWAYS use fresh timestamps (not cached from originLocation)
+                            location.time = System.currentTimeMillis()
+                            location.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
 
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
+                            location.accuracy = accuracy.coerceIn(5f, 20f)
+                            location.bearing = bearing
                             location.speed = speed
-                            location.speedAccuracyMetersPerSecond = 0F
+                            location.speedAccuracyMetersPerSecond = 0.5F
+                            location.bearingAccuracyDegrees = 10f
+                            
+                            // CRITICAL: Set hasSpeed/hasBearing flags for Google Maps
+                            setLocationFieldsWithFlags(location)
+                            
+                            // Add GPS extras for better validity
+                            val extras = android.os.Bundle()
+                            extras.putInt("satellites", 12)
+                            location.extras = extras
+                            
                             XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
                                 HiddenApiBypass.invoke(
@@ -229,15 +287,32 @@ object LocationHook {
                             method,
                             object : XC_MethodHook() {
                                 override fun beforeHookedMethod(param: MethodHookParam) {
+                                    // CRITICAL: Force update to get FRESH bearing and speed
+                                    updateLocation()
+                                    
                                     val location = Location(LocationManager.GPS_PROVIDER)
-                                    location.time = System.currentTimeMillis() - 300
+                                    // CRITICAL: ALWAYS use fresh timestamps
+                                    location.time = System.currentTimeMillis()
+                                    location.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                                    
                                     location.latitude = newlat
                                     location.longitude = newlng
                                     location.altitude = 0.0
                                     location.speed = speed
                                     location.bearing = bearing
-                                    location.accuracy = accuracy
-                                    location.speedAccuracyMetersPerSecond = 0F
+                                    
+                                    location.accuracy = accuracy.coerceIn(5f, 20f)
+                                    location.speedAccuracyMetersPerSecond = 0.5F
+                                    location.bearingAccuracyDegrees = 10f
+                                    
+                                    // CRITICAL: Set hasSpeed/hasBearing flags for Google Maps
+                                    setLocationFieldsWithFlags(location)
+                                    
+                                    // Add GPS extras for better validity
+                                    val extras = android.os.Bundle()
+                                    extras.putInt("satellites", 12)
+                                    location.extras = extras
+                                    
                                     param.result = location
                                 }
                             }
@@ -265,27 +340,39 @@ object LocationHook {
                     Location::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
+                            // CRITICAL: Force update to get FRESH bearing and speed
+                            updateLocation()
+                            
                             lateinit var location: Location
-                            lateinit var originLocation: Location
                             if (param.args[0] == null) {
                                 location = Location(LocationManager.GPS_PROVIDER)
-                                location.time = System.currentTimeMillis() - 300
                             } else {
-                                originLocation = param.args[0] as Location
+                                val originLocation = param.args[0] as Location
                                 location = Location(originLocation.provider)
-                                location.time = originLocation.time
-                                location.accuracy = accuracy
-                                location.bearing = bearing
-                                location.bearingAccuracyDegrees = originLocation.bearingAccuracyDegrees
-                                location.elapsedRealtimeNanos = originLocation.elapsedRealtimeNanos
                                 location.verticalAccuracyMeters = originLocation.verticalAccuracyMeters
                             }
+                            
+                            // CRITICAL: ALWAYS use fresh timestamps (not cached from originLocation)
+                            location.time = System.currentTimeMillis()
+                            location.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
 
                             location.latitude = newlat
                             location.longitude = newlng
                             location.altitude = 0.0
+                            location.accuracy = accuracy.coerceIn(5f, 20f)
+                            location.bearing = bearing
                             location.speed = speed
-                            location.speedAccuracyMetersPerSecond = 0F
+                            location.speedAccuracyMetersPerSecond = 0.5F
+                            location.bearingAccuracyDegrees = 10f
+                            
+                            // CRITICAL: Set hasSpeed/hasBearing flags for Google Maps
+                            setLocationFieldsWithFlags(location)
+                            
+                            // Add GPS extras for better validity
+                            val extras = android.os.Bundle()
+                            extras.putInt("satellites", 12)
+                            location.extras = extras
+                            
                             // Optimize: Remove excessive logging from Android 14+ hook
                             // XposedBridge.log("GS: lat: ${location.latitude}, lon: ${location.longitude}, bearing: ${location.bearing}, speed: ${location.speed}")
                             try {
@@ -350,21 +437,34 @@ object LocationHook {
                         override fun beforeHookedMethod(param: MethodHookParam) {
                             if (!settings.isStarted || ignorePkg.contains(lpparam.packageName)) return
                             
-                            if (System.currentTimeMillis() - mLastUpdated > interval) {
-                                updateLocation()
-                            }
+                            // CRITICAL: ALWAYS update to get fresh bearing/speed (no interval check)
+                            updateLocation()
                             
                             try {
                                 val originLocation = param.args[0] as? Location ?: return
                                 val location = Location(originLocation.provider)
-                                location.time = originLocation.time
+                                
+                                // CRITICAL: ALWAYS use fresh timestamps (not cached)
+                                location.time = System.currentTimeMillis()
+                                location.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                                
                                 location.latitude = newlat
                                 location.longitude = newlng
                                 location.altitude = 0.0
-                                location.accuracy = accuracy
+                                location.accuracy = accuracy.coerceIn(5f, 20f)
                                 location.bearing = bearing
+                                location.bearingAccuracyDegrees = 10f
                                 location.speed = speed
-                                location.elapsedRealtimeNanos = originLocation.elapsedRealtimeNanos
+                                location.speedAccuracyMetersPerSecond = 0.5F
+                                location.verticalAccuracyMeters = originLocation.verticalAccuracyMeters ?: 5f
+                                
+                                // CRITICAL: Set hasSpeed/hasBearing flags for Google Maps
+                                setLocationFieldsWithFlags(location)
+                                
+                                // Add GPS extras for better validity
+                                val extras = android.os.Bundle()
+                                extras.putInt("satellites", 12)
+                                location.extras = extras
                                 
                                 try {
                                     HiddenApiBypass.invoke(
@@ -390,20 +490,32 @@ object LocationHook {
                         override fun beforeHookedMethod(param: MethodHookParam) {
                             if (!settings.isStarted || ignorePkg.contains(lpparam.packageName)) return
                             
-                            if (System.currentTimeMillis() - mLastUpdated > interval) {
-                                updateLocation()
-                            }
+                            // CRITICAL: ALWAYS update to get fresh bearing/speed (no interval check)
+                            updateLocation()
                             
                             try {
                                 val provider = param.args[0] as String
                                 val location = Location(provider)
+                                // CRITICAL: ALWAYS use fresh timestamps
                                 location.time = System.currentTimeMillis()
+                                location.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                                
                                 location.latitude = newlat
                                 location.longitude = newlng
                                 location.altitude = 0.0
-                                location.accuracy = accuracy
+                                location.accuracy = accuracy.coerceIn(5f, 20f)
                                 location.bearing = bearing
+                                location.bearingAccuracyDegrees = 10f
                                 location.speed = speed
+                                location.speedAccuracyMetersPerSecond = 0.5F
+                                
+                                // CRITICAL: Set hasSpeed/hasBearing flags for Google Maps
+                                setLocationFieldsWithFlags(location)
+                                
+                                // Add GPS extras for better validity
+                                val extras = android.os.Bundle()
+                                extras.putInt("satellites", 12)
+                                location.extras = extras
                                 
                                 try {
                                     HiddenApiBypass.invoke(

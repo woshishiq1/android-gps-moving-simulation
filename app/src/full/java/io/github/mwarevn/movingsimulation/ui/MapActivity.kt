@@ -762,6 +762,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
             swapStartAndDestination()
         }
 
+        // Navigation controls toggle (collapse/expand)
+        binding.navControlsToggle.setOnClickListener {
+            toggleNavigationControls()
+        }
+        
+        // Restore saved state
+        restoreNavigationControlsState()
+
         android.util.Log.d("MapActivity", "========== setupButtons() END ==========")
     }
 
@@ -1380,6 +1388,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Hide action button and show navigation controls
         binding.actionButton.visibility = View.GONE
         binding.navigationControlsCard.visibility = View.VISIBLE
+        
+        // Hide cancel route button during navigation
+        binding.cancelRouteButton.visibility = View.GONE
 
         // Update navigation addresses
         updateNavigationAddresses()
@@ -1985,6 +1996,81 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
         // Don't pause route simulator when going to background during navigation
         // Let it continue running for seamless background GPS simulation
+    }
+
+    /**
+     * Toggle navigation controls between collapsed and expanded state
+     */
+    private fun toggleNavigationControls() {
+        val isCurrentlyExpanded = PrefManager.navControlsExpanded
+        val newExpandedState = !isCurrentlyExpanded
+        
+        // Save new state
+        PrefManager.navControlsExpanded = newExpandedState
+        
+        // Animate the transition
+        animateNavigationControls(newExpandedState)
+    }
+    
+    /**
+     * Animate navigation controls collapse/expand
+     */
+    private fun animateNavigationControls(expanded: Boolean) {
+        val expandableContent = binding.navControlsExpandable
+        val toggleButton = binding.navControlsToggle
+        
+        if (expanded) {
+            // Expand animation
+            expandableContent.visibility = View.VISIBLE
+            expandableContent.alpha = 0f
+            expandableContent.animate()
+                .alpha(1f)
+                .setDuration(200)
+                .start()
+            
+            // Rotate toggle button icon (point up when expanded)
+            toggleButton.animate()
+                .rotation(0f)
+                .setDuration(200)
+                .start()
+            toggleButton.setImageResource(R.drawable.ic_expand_less)
+        } else {
+            // Collapse animation
+            expandableContent.animate()
+                .alpha(0f)
+                .setDuration(200)
+                .withEndAction {
+                    expandableContent.visibility = View.GONE
+                }
+                .start()
+            
+            // Rotate toggle button icon (point down when collapsed)
+            toggleButton.animate()
+                .rotation(180f)
+                .setDuration(200)
+                .start()
+            toggleButton.setImageResource(R.drawable.ic_expand_more)
+        }
+    }
+    
+    /**
+     * Restore navigation controls state from preferences
+     */
+    private fun restoreNavigationControlsState() {
+        val isExpanded = PrefManager.navControlsExpanded
+        
+        // Set initial state without animation
+        if (isExpanded) {
+            binding.navControlsExpandable.visibility = View.VISIBLE
+            binding.navControlsExpandable.alpha = 1f
+            binding.navControlsToggle.setImageResource(R.drawable.ic_expand_less)
+            binding.navControlsToggle.rotation = 0f
+        } else {
+            binding.navControlsExpandable.visibility = View.GONE
+            binding.navControlsExpandable.alpha = 0f
+            binding.navControlsToggle.setImageResource(R.drawable.ic_expand_more)
+            binding.navControlsToggle.rotation = 180f
+        }
     }
 
     override fun onResume() {
