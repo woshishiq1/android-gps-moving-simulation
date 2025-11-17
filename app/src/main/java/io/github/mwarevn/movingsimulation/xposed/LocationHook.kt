@@ -530,6 +530,198 @@ object LocationHook {
                 )
             } catch (e: Throwable) { /* Ignore */ }
 
+            // CRITICAL: Hook LocationManager.requestLocationUpdates() for continuous updates
+            // This is THE MOST IMPORTANT hook for Google Maps and navigation apps
+            try {
+                val locationManagerClass = XposedHelpers.findClass(
+                    "android.location.LocationManager",
+                    lpparam.classLoader
+                )
+                
+                // Hook requestLocationUpdates with LocationListener
+                try {
+                    XposedHelpers.findAndHookMethod(
+                        locationManagerClass,
+                        "requestLocationUpdates",
+                        String::class.java,
+                        Long::class.javaPrimitiveType,
+                        Float::class.javaPrimitiveType,
+                        android.location.LocationListener::class.java,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                try {
+                                    if (!settings.isStarted || ignorePkg.contains(lpparam.packageName)) return
+                                    
+                                    val listener = param.args[3] as? android.location.LocationListener
+                                    if (listener != null) {
+                                        // Wrap listener to inject fake locations continuously
+                                        val wrappedListener = object : android.location.LocationListener {
+                                            override fun onLocationChanged(location: Location) {
+                                                try {
+                                                    // CRITICAL: Update location data
+                                                    updateLocation()
+                                                    
+                                                    // Create fake location
+                                                    val fakeLocation = Location(location.provider)
+                                                    fakeLocation.time = System.currentTimeMillis()
+                                                    fakeLocation.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                                                    fakeLocation.latitude = newlat
+                                                    fakeLocation.longitude = newlng
+                                                    fakeLocation.altitude = 0.0
+                                                    fakeLocation.accuracy = accuracy.coerceIn(5f, 20f)
+                                                    fakeLocation.bearing = bearing
+                                                    fakeLocation.bearingAccuracyDegrees = 10f
+                                                    fakeLocation.speed = speed
+                                                    fakeLocation.speedAccuracyMetersPerSecond = 0.5F
+                                                    
+                                                    // CRITICAL: Set flags
+                                                    setLocationFieldsWithFlags(fakeLocation)
+                                                    
+                                                    // Add extras
+                                                    val extras = android.os.Bundle()
+                                                    extras.putInt("satellites", 12)
+                                                    fakeLocation.extras = extras
+                                                    
+                                                    try {
+                                                        HiddenApiBypass.invoke(
+                                                            fakeLocation.javaClass, fakeLocation, "setIsFromMockProvider", false
+                                                        )
+                                                    } catch (e: Exception) { /* Ignore */ }
+                                                    
+                                                    // Call original listener with fake location
+                                                    listener.onLocationChanged(fakeLocation)
+                                                } catch (e: Throwable) {
+                                                    // Fallback: call original
+                                                    try {
+                                                        listener.onLocationChanged(location)
+                                                    } catch (e2: Throwable) { /* Ignore */ }
+                                                }
+                                            }
+                                            
+                                            override fun onStatusChanged(provider: String, status: Int, extras: android.os.Bundle) {
+                                                try {
+                                                    listener.onStatusChanged(provider, status, extras)
+                                                } catch (e: Throwable) { /* Ignore */ }
+                                            }
+                                            
+                                            override fun onProviderEnabled(provider: String) {
+                                                try {
+                                                    listener.onProviderEnabled(provider)
+                                                } catch (e: Throwable) { /* Ignore */ }
+                                            }
+                                            
+                                            override fun onProviderDisabled(provider: String) {
+                                                try {
+                                                    listener.onProviderDisabled(provider)
+                                                } catch (e: Throwable) { /* Ignore */ }
+                                            }
+                                        }
+                                        
+                                        // Replace listener
+                                        param.args[3] = wrappedListener
+                                        
+                                        XposedBridge.log("LocationHook: Wrapped LocationListener for continuous updates")
+                                    }
+                                } catch (e: Throwable) {
+                                    // Silently fail
+                                }
+                            }
+                        }
+                    )
+                } catch (e: Throwable) {
+                    // Method signature may vary
+                }
+                
+                // Also hook with LocationRequest (Android 8.0+)
+                try {
+                    XposedHelpers.findAndHookMethod(
+                        locationManagerClass,
+                        "requestLocationUpdates",
+                        android.location.LocationRequest::class.java,
+                        android.location.LocationListener::class.java,
+                        android.os.Looper::class.java,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                try {
+                                    if (!settings.isStarted || ignorePkg.contains(lpparam.packageName)) return
+                                    
+                                    val listener = param.args[1] as? android.location.LocationListener
+                                    if (listener != null) {
+                                        // Same wrapping logic as above
+                                        val wrappedListener = object : android.location.LocationListener {
+                                            override fun onLocationChanged(location: Location) {
+                                                try {
+                                                    updateLocation()
+                                                    
+                                                    val fakeLocation = Location(location.provider)
+                                                    fakeLocation.time = System.currentTimeMillis()
+                                                    fakeLocation.elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                                                    fakeLocation.latitude = newlat
+                                                    fakeLocation.longitude = newlng
+                                                    fakeLocation.altitude = 0.0
+                                                    fakeLocation.accuracy = accuracy.coerceIn(5f, 20f)
+                                                    fakeLocation.bearing = bearing
+                                                    fakeLocation.bearingAccuracyDegrees = 10f
+                                                    fakeLocation.speed = speed
+                                                    fakeLocation.speedAccuracyMetersPerSecond = 0.5F
+                                                    
+                                                    setLocationFieldsWithFlags(fakeLocation)
+                                                    
+                                                    val extras = android.os.Bundle()
+                                                    extras.putInt("satellites", 12)
+                                                    fakeLocation.extras = extras
+                                                    
+                                                    try {
+                                                        HiddenApiBypass.invoke(
+                                                            fakeLocation.javaClass, fakeLocation, "setIsFromMockProvider", false
+                                                        )
+                                                    } catch (e: Exception) { /* Ignore */ }
+                                                    
+                                                    listener.onLocationChanged(fakeLocation)
+                                                } catch (e: Throwable) {
+                                                    try {
+                                                        listener.onLocationChanged(location)
+                                                    } catch (e2: Throwable) { /* Ignore */ }
+                                                }
+                                            }
+                                            
+                                            override fun onStatusChanged(provider: String, status: Int, extras: android.os.Bundle) {
+                                                try {
+                                                    listener.onStatusChanged(provider, status, extras)
+                                                } catch (e: Throwable) { /* Ignore */ }
+                                            }
+                                            
+                                            override fun onProviderEnabled(provider: String) {
+                                                try {
+                                                    listener.onProviderEnabled(provider)
+                                                } catch (e: Throwable) { /* Ignore */ }
+                                            }
+                                            
+                                            override fun onProviderDisabled(provider: String) {
+                                                try {
+                                                    listener.onProviderDisabled(provider)
+                                                } catch (e: Throwable) { /* Ignore */ }
+                                            }
+                                        }
+                                        
+                                        param.args[1] = wrappedListener
+                                        
+                                        XposedBridge.log("LocationHook: Wrapped LocationListener (LocationRequest)")
+                                    }
+                                } catch (e: Throwable) {
+                                    // Silently fail
+                                }
+                            }
+                        }
+                    )
+                } catch (e: Throwable) {
+                    // May not exist on older Android versions
+                }
+                
+            } catch (e: Throwable) {
+                XposedBridge.log("LocationHook: Failed to hook requestLocationUpdates: ${e.message}")
+            }
+
             // Hook Google Play Services - only if available
             try {
                 hookFusedLocationProvider(lpparam)
