@@ -37,6 +37,12 @@ object PrefManager   {
     private const val ENABLE_ADVANCED_RANDOMIZATION = "enable_advanced_randomization"
     private const val AUTO_CURVE_SPEED = "auto_curve_speed"
     private const val NAV_CONTROLS_EXPANDED = "nav_controls_expanded"
+    
+    // CRITICAL: Synced speed and bearing from RouteSimulator (for Xposed hooks)
+    // These are updated by RouteSimulator and read by LocationHook/SensorSpoofHook
+    private const val SYNCED_ACTUAL_SPEED = "synced_actual_speed"
+    private const val SYNCED_BEARING = "synced_bearing"
+    private const val SYNCED_CURVE_REDUCTION = "synced_curve_reduction"
 
     private val pref: SharedPreferences by lazy {
         try {
@@ -151,6 +157,19 @@ object PrefManager   {
     var navControlsExpanded: Boolean
         get() = pref.getBoolean(NAV_CONTROLS_EXPANDED, true)
         set(value) = pref.edit().putBoolean(NAV_CONTROLS_EXPANDED, value).apply()
+    
+    // CRITICAL: Synced values from RouteSimulator (for Xposed hooks)
+    var syncedActualSpeed: Float
+        get() = pref.getFloat(SYNCED_ACTUAL_SPEED, 0f)
+        set(value) = pref.edit().putFloat(SYNCED_ACTUAL_SPEED, value).apply()
+    
+    var syncedBearing: Float
+        get() = pref.getFloat(SYNCED_BEARING, 0f)
+        set(value) = pref.edit().putFloat(SYNCED_BEARING, value).apply()
+    
+    var syncedCurveReduction: Float
+        get() = pref.getFloat(SYNCED_CURVE_REDUCTION, 1f)
+        set(value) = pref.edit().putFloat(SYNCED_CURVE_REDUCTION, value).apply()
     
     /**
      * Reset advanced anti-detection features to default settings (all disabled)

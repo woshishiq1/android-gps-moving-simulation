@@ -44,7 +44,7 @@ object SensorSpoofHook {
 
     // State tracking
     private var lastSyncedSpeed = 0f
-
+    
     // Kalman filter state for accelerometer
     private var accelStateX = 0f
     private var accelStateY = 0f
@@ -61,7 +61,7 @@ object SensorSpoofHook {
 
     // Cache for SensorEvent.values field (for direct modification)
     private var sensorEventValuesField: Field? = null
-    
+
     fun initHooks(lpparam: XC_LoadPackage.LoadPackageParam) {
         // Skip system package and own app
         if (lpparam.packageName == "android" || lpparam.packageName == BuildConfig.APPLICATION_ID) {
@@ -100,39 +100,96 @@ object SensorSpoofHook {
             sensorEventValuesField = sensorEventClass.getDeclaredField("values")
             sensorEventValuesField?.isAccessible = true
             
-            // Hook the field getter using Xposed field hook
-            XposedHelpers.findAndHookMethod(
-                sensorEventClass,
-                "getValues",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        try {
-                            val settings = Xshare()
-                            if (!settings.isStarted) return
-                            
-                            val sensorEvent = param.thisObject
-                            val sensor = XposedHelpers.getObjectField(sensorEvent, "sensor")
-                            val sensorType = XposedHelpers.getIntField(sensor, "mType")
-                            
-                            val values = param.result as? FloatArray
-                            if (values != null && values.isNotEmpty()) {
-                                // Modify values array
-                                when (sensorType) {
-                                    2 -> injectMagneticFieldData(values)  // MAGNETOMETER - CRITICAL!
-                                    1 -> injectAccelerometerData(values)
-                                    4 -> injectGyroscopeData(values)
-                                    9 -> injectGravityData(values)
+            // CRITICAL: Hook field access directly using Xposed field hook
+            // This intercepts when apps read event.values directly
+            try {
+                XposedHelpers.findAndHookMethod(
+                    sensorEventClass,
+                    "getValues",
+                    object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            try {
+                                val settings = Xshare()
+                                if (!settings.isStarted) return
+                                
+                                val sensorEvent = param.thisObject
+                                val sensor = XposedHelpers.getObjectField(sensorEvent, "sensor")
+                                val sensorType = XposedHelpers.getIntField(sensor, "mType")
+                                
+                                val values = param.result as? FloatArray
+                                if (values != null && values.isNotEmpty()) {
+                                    // Modify values array
+                                    when (sensorType) {
+                                        2 -> {  // MAGNETOMETER - CRITICAL!
+                                            injectMagneticFieldData(values)
+                                            param.result = values
+                                        }
+                                        1 -> {
+                                            injectAccelerometerData(values)
+                                            param.result = values
+                                        }
+                                        4 -> {
+                                            injectGyroscopeData(values)
+                                            param.result = values
+                                        }
+                                        9 -> {
+                                            injectGravityData(values)
+                                            param.result = values
+                                        }
+                                    }
                                 }
-                                param.result = values
+                            } catch (e: Throwable) {
+                                // Silently fail
                             }
+                        }
+                    }
+                )
+                XposedBridge.log("$TAG: Hooked SensorEvent.getValues() method")
+            } catch (e: Throwable) {
+                XposedBridge.log("$TAG: getValues() method not found, trying field access")
+            }
+            
+            // Also try hooking field access directly
+            // Some apps may access event.values directly without getter
+            try {
+                // Hook all methods that might access values field
+                for (method in sensorEventClass.declaredMethods) {
+                    if (method.name.contains("value", ignoreCase = true) || 
+                        method.name == "toString" ||
+                        method.returnType == FloatArray::class.java) {
+                        try {
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun afterHookedMethod(param: MethodHookParam) {
+                                    if (param.result is FloatArray) {
+                                        try {
+                                            val settings = Xshare()
+                                            if (!settings.isStarted) return
+                                            
+                                            // Try to get sensor type from thisObject
+                                            val sensorEvent = param.thisObject
+                                            val sensor = XposedHelpers.getObjectField(sensorEvent, "sensor")
+                                            val sensorType = XposedHelpers.getIntField(sensor, "mType")
+                                            
+                                            val values = param.result as? FloatArray
+                                            if (values != null && values.size >= 3 && sensorType == 2) {
+                                                injectMagneticFieldData(values)
+                                                param.result = values
+                                            }
+                                        } catch (e: Throwable) {
+                                            // Ignore
+                                        }
+                                    }
+                                }
+                            })
                         } catch (e: Throwable) {
-                            // Silently fail
+                            // Ignore
                         }
                     }
                 }
-            )
+            } catch (e: Throwable) {
+                // Ignore
+            }
             
-            XposedBridge.log("$TAG: Hooked SensorEvent.getValues()")
         } catch (e: Throwable) {
             XposedBridge.log("$TAG: Failed to hook SensorEvent.values: ${e.message}")
         }
@@ -181,7 +238,7 @@ object SensorSpoofHook {
                 "android.hardware.SensorManager",
                 lpparam.classLoader
             )
-            
+
             val sensorEventListenerClass = XposedHelpers.findClass(
                 "android.hardware.SensorEventListener",
                 lpparam.classLoader
@@ -191,14 +248,14 @@ object SensorSpoofHook {
                 "android.hardware.Sensor",
                 lpparam.classLoader
             )
-            
+
             // Hook registerListener with multiple parameter combinations
             val registerMethods = arrayOf(
                 arrayOf(sensorEventListenerClass, sensorClass, Int::class.java),
                 arrayOf(sensorEventListenerClass, sensorClass, Int::class.java, Int::class.java),
                 arrayOf(sensorEventListenerClass, sensorClass, Int::class.java, android.os.Handler::class.java)
             )
-            
+
             for (params in registerMethods) {
                 try {
                     XposedHelpers.findAndHookMethod(
@@ -221,12 +278,36 @@ object SensorSpoofHook {
                                         val wrappedListener = object : android.hardware.SensorEventListener {
                                             override fun onSensorChanged(event: SensorEvent) {
                                                 try {
-                                                    // Modify sensor event before passing to original listener
+                                                    // CRITICAL: Check if GPS spoofing is active
+                                                    val settings = Xshare()
+                                                    if (!settings.isStarted) {
+                                                        listener.onSensorChanged(event)
+                                                        return
+                                                    }
+                                                    
+                                                    // CRITICAL: Modify sensor event values DIRECTLY
+                                                    // event.values is a public final field, but we can modify array elements
                                                     val values = event.values
                                                     if (values != null && values.isNotEmpty()) {
+                                                        // Inject fake data directly into the array
                                                         when (sensorType) {
-                                                            2 -> {  // TYPE_MAGNETIC_FIELD
+                                                            2 -> {  // TYPE_MAGNETIC_FIELD - CRITICAL!
+                                                                val settings = Xshare()
+                                                                val bearing = settings.getSyncedBearing
+                                                                val speed = settings.getSyncedActualSpeed
+                                                                
+                                                                // Store original values for debugging
+                                                                val origBx = values[0]
+                                                                val origBy = values[1]
+                                                                
                                                                 injectMagneticFieldData(values)
+                                                                
+                                                                // ALWAYS log magnetometer injection (for debugging)
+                                                                if (settings.isStarted && System.currentTimeMillis() % 3000L < 100L) {
+                                                                    XposedBridge.log("$TAG: Magnetometer INJECTED - Type=$sensorType Bearing=${String.format("%.1f", bearing)}° Speed=${String.format("%.1f", speed)} km/h")
+                                                                    XposedBridge.log("$TAG:   Original: Bx=${String.format("%.2f", origBx)} By=${String.format("%.2f", origBy)}")
+                                                                    XposedBridge.log("$TAG:   Injected: Bx=${String.format("%.2f", values[0])} By=${String.format("%.2f", values[1])}")
+                                                                }
                                                             }
                                                             1 -> {  // TYPE_ACCELEROMETER
                                                                 injectAccelerometerData(values)
@@ -243,6 +324,10 @@ object SensorSpoofHook {
                                                     // Call original listener with modified data
                                                     listener.onSensorChanged(event)
                                                 } catch (e: Throwable) {
+                                                    // Log error for debugging
+                                                    if (sensorType == 2) {
+                                                        XposedBridge.log("$TAG: Error in wrapped listener (magnetometer): ${e.message}")
+                                                    }
                                                     // Fallback: call original without modification
                                                     try {
                                                         listener.onSensorChanged(event)
@@ -288,20 +373,22 @@ object SensorSpoofHook {
      */
     private fun injectAccelerometerData(values: FloatArray) {
         try {
-            val actualSpeed = SpeedSyncManager.getActualSpeed()
-            val curveReduction = SpeedSyncManager.getCurveReduction()
+            val settings = Xshare()
+            val actualSpeed = settings.getSyncedActualSpeed
+            val curveReduction = settings.getSyncedCurveReduction
             
             // Check if simulation started/stopped
             if (actualSpeed < 0.01f && lastSyncedSpeed >= 0.01f) {
                 resetSensorState()
             }
             lastSyncedSpeed = actualSpeed
-            
+
             val currentTime = System.currentTimeMillis()
             val deltaTime = if (prevTime > 0) (currentTime - prevTime) / 1000.0 else 0.1
             
             if (deltaTime > 0 && deltaTime < 10.0 && actualSpeed > 0.01f) {
-                val bearing = SpeedSyncManager.getBearing()
+                val settings = Xshare()
+                val bearing = settings.getSyncedBearing
                 val bearingRad = Math.toRadians(bearing.toDouble())
                 
                 // Base acceleration magnitude from speed
@@ -337,7 +424,7 @@ object SensorSpoofHook {
                 }
             } else if (actualSpeed <= 0.01f) {
                 // Stationary - minimal noise
-                if (values.size >= 3) {
+            if (values.size >= 3) {
                     values[0] = (Math.random() * 0.1 - 0.05).toFloat()
                     values[1] = (Math.random() * 0.1 - 0.05).toFloat()
                     values[2] = 9.8f + (Math.random() * 0.1 - 0.05).toFloat()
@@ -345,7 +432,7 @@ object SensorSpoofHook {
             }
             
             prevTime = currentTime
-            
+
         } catch (e: Throwable) {
             // Silently fail
         }
@@ -358,22 +445,30 @@ object SensorSpoofHook {
      */
     private fun injectMagneticFieldData(values: FloatArray) {
         try {
-            // Get bearing DIRECTLY from SpeedSyncManager (synced with RouteSimulator)
-            val syncedBearing = SpeedSyncManager.getBearing()
-            val actualSpeed = SpeedSyncManager.getActualSpeed()
+            val settings = Xshare()
+            if (!settings.isStarted) return
             
-            // ALWAYS use synced bearing (even when speed = 0)
-            // This ensures compass always points in fake direction
+            // Get bearing DIRECTLY from SharedPreferences (synced with RouteSimulator)
+            val syncedBearing = settings.getSyncedBearing
+            val actualSpeed = settings.getSyncedActualSpeed
+            
+            // CRITICAL: If navigation not active, use settings bearing
+            val fakeBearing = if (actualSpeed > 0.01f || syncedBearing > 0.01f) {
+                syncedBearing
+            } else {
+                // Fallback to settings bearing when navigation not active
+                settings.getBearing
+            }
             
             // Convert bearing to magnetic field vector
             val magneticFieldStrength = 50f  // μT (typical Earth magnetic field)
-            val bearingRad = Math.toRadians(syncedBearing.toDouble())
+            val bearingRad = Math.toRadians(fakeBearing.toDouble())
             
             // Android compass formula:
             // Bx = B * sin(bearing) - East component
             // By = B * cos(bearing) - North component
             // Bz = vertical component (varies by location)
-            
+
             if (values.size >= 3) {
                 // Calculate magnetic field components
                 val bx = (magneticFieldStrength * sin(bearingRad)).toFloat()
@@ -401,8 +496,9 @@ object SensorSpoofHook {
      */
     private fun injectGyroscopeData(values: FloatArray) {
         try {
-            val actualSpeed = SpeedSyncManager.getActualSpeed()
-            val curveReduction = SpeedSyncManager.getCurveReduction()
+            val settings = Xshare()
+            val actualSpeed = settings.getSyncedActualSpeed
+            val curveReduction = settings.getSyncedCurveReduction
             
             if (actualSpeed > 0.01f) {
                 val turnFactor = 1.0 - curveReduction.toDouble()
@@ -445,7 +541,7 @@ object SensorSpoofHook {
             // Silently fail
         }
     }
-    
+
     private fun resetSensorState() {
         accelStateX = 0f
         accelStateY = 0f

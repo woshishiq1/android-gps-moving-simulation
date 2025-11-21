@@ -42,7 +42,10 @@ object SpeedSyncManager {
      * @param bearing Current bearing in degrees (0-360)
      */
     fun updateBearing(bearing: Float) {
-        currentBearing.set((bearing % 360 + 360) % 360)  // Normalize to 0-360
+        val normalizedBearing = (bearing % 360 + 360) % 360  // Normalize to 0-360
+        currentBearing.set(normalizedBearing)
+        // CRITICAL: Also save to SharedPreferences for Xposed hooks (cross-process)
+        PrefManager.syncedBearing = normalizedBearing
     }
 
     /**
@@ -68,7 +71,10 @@ object SpeedSyncManager {
      * @param speed The actual speed being used (control speed × curve reduction)
      */
     fun updateActualSpeed(speed: Float) {
-        actualSpeedKmh.set(speed.coerceIn(0f, 400f))
+        val clampedSpeed = speed.coerceIn(0f, 400f)
+        actualSpeedKmh.set(clampedSpeed)
+        // CRITICAL: Also save to SharedPreferences for Xposed hooks (cross-process)
+        PrefManager.syncedActualSpeed = clampedSpeed
     }
 
     /**
@@ -77,7 +83,10 @@ object SpeedSyncManager {
      * @param reduction Reduction factor: 1.0 = normal, 0.5 = half speed, 0.3 = sharp turn
      */
     fun updateCurveReduction(reduction: Float) {
-        currentCurveReduction.set(reduction.coerceIn(0f, 1f))
+        val clampedReduction = reduction.coerceIn(0f, 1f)
+        currentCurveReduction.set(clampedReduction)
+        // CRITICAL: Also save to SharedPreferences for Xposed hooks (cross-process)
+        PrefManager.syncedCurveReduction = clampedReduction
     }
 
     /**
@@ -132,6 +141,10 @@ object SpeedSyncManager {
         actualSpeedKmh.set(0f)
         currentCurveReduction.set(1f)
         currentBearing.set(0f)  // Reset bearing to North
+        // CRITICAL: Also reset SharedPreferences for Xposed hooks
+        PrefManager.syncedActualSpeed = 0f
+        PrefManager.syncedBearing = 0f
+        PrefManager.syncedCurveReduction = 1f
     }
 
     /**

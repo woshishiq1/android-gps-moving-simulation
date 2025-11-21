@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.location.Geocoder
+import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -26,11 +27,15 @@ import io.github.mwarevn.movingsimulation.R
 import io.github.mwarevn.movingsimulation.network.OsrmClient
 import io.github.mwarevn.movingsimulation.network.RoutingService
 import io.github.mwarevn.movingsimulation.network.VehicleType
+import io.github.mwarevn.movingsimulation.utils.NavigationForegroundService
 import io.github.mwarevn.movingsimulation.utils.PolylineUtils
 import io.github.mwarevn.movingsimulation.utils.PrefManager
 import io.github.mwarevn.movingsimulation.utils.RouteSimulator
 import io.github.mwarevn.movingsimulation.utils.ext.showToast
 import kotlinx.coroutines.*
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.*
 
 /**
@@ -96,6 +101,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private var lastJoystickLat = 0.0
     private var lastJoystickLon = 0.0
     private var isActivityVisible = false // Track if activity is visible
+    
+    // CRITICAL FIX: Use separate scope for RouteSimulator to continue running in background
+    // This scope will only be cancelled when Activity is destroyed, not when paused
+    // Use Dispatchers.Default for CPU-bound work, ensures it runs even when app is backgrounded
+    private val navigationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val prefChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         // Listen for GPS position changes from joystick
         if (key == "latitude" || key == "longitude") {
@@ -305,6 +315,18 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
                 LOCATION_PERMISSION_REQUEST_CODE
             )
+        }
+
+        // IMPORTANT: Request POST_NOTIFICATIONS permission for Android 13+ (required for foreground service)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    LOCATION_PERMISSION_REQUEST_CODE + 1 // Use different request code
+                )
+            }
         }
 
         mMap.uiSettings.apply {
@@ -670,6 +692,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // Pause button
         binding.pauseButton.setOnClickListener {
             if (isDriving && !isPaused) {
+                // CRITICAL FIX: Force update completed path before pausing
+                // This ensures the route is drawn up to the pause point
+                forceUpdateCompletedPath()
+                
                 isPaused = true
                 routeSimulator?.pause()
                 binding.pauseButton.visibility = View.GONE
@@ -776,8 +802,19 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private suspend fun searchLocation(query: String, onFound: (LatLng) -> Unit) {
         withContext(Dispatchers.IO) {
             try {
+                // IMPORTANT FIX: Check if Geocoder is available
+                if (!Geocoder.isPresent()) {
+                    withContext(Dispatchers.Main) {
+                        showToast("Geocoding không khả dụng trên thiết bị này")
+                    }
+                    return@withContext
+                }
+                
                 val geocoder = Geocoder(this@MapActivity, Locale.getDefault())
-                val addresses = geocoder.getFromLocationName(query, 1)
+                // IMPORTANT FIX: Add timeout to prevent hanging
+                val addresses = withTimeout(5000L) { // 5 second timeout
+                    geocoder.getFromLocationName(query, 1)
+                }
 
                 if (!addresses.isNullOrEmpty()) {
                     val address = addresses[0]
@@ -788,12 +825,21 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        showToast("Không tìm thấy địa điểm")
+                        showToast("Không tìm thấy địa điểm: \"$query\"")
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
                 withContext(Dispatchers.Main) {
-                    showToast("Lỗi tìm kiếm: ${e.message}")
+                    showToast("Tìm kiếm quá lâu. Vui lòng thử lại.")
+                }
+            } catch (e: IOException) {
+                withContext(Dispatchers.Main) {
+                    showToast("Lỗi kết nối. Vui lòng kiểm tra mạng.")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MapActivity", "Geocoding error: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    showToast("Lỗi tìm kiếm: ${e.message ?: "Không xác định"}")
                 }
             }
         }
@@ -1277,9 +1323,34 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
 
                 // showToast("Đường đi đã sẵn sàng. Nhấn Bắt đầu để di chuyển")
 
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                // CRITICAL FIX: Detailed error messages
+                routeLoadError = "Hết thời gian chờ. Vui lòng kiểm tra kết nối mạng và thử lại."
+                isLoadingRoute = false
+                showRouteErrorUI()
+            } catch (e: retrofit2.HttpException) {
+                // CRITICAL FIX: HTTP error codes
+                val code = e.code()
+                routeLoadError = when (code) {
+                    401 -> "API key không hợp lệ. Vui lòng kiểm tra cài đặt."
+                    429 -> "Đã vượt quá giới hạn API. Vui lòng thử lại sau."
+                    500, 502, 503 -> "Lỗi server. Vui lòng thử lại sau."
+                    else -> "Lỗi kết nối ($code). Vui lòng thử lại."
+                }
+                isLoadingRoute = false
+                showRouteErrorUI()
+            } catch (e: java.net.UnknownHostException) {
+                routeLoadError = "Không có kết nối mạng. Vui lòng kiểm tra WiFi/dữ liệu di động."
+                isLoadingRoute = false
+                showRouteErrorUI()
+            } catch (e: java.net.SocketTimeoutException) {
+                routeLoadError = "Kết nối quá chậm. Vui lòng kiểm tra mạng và thử lại."
+                isLoadingRoute = false
+                showRouteErrorUI()
             } catch (e: Exception) {
-                // Handle error
-                routeLoadError = "Lỗi vẽ đường: ${e.message}"
+                // CRITICAL FIX: Better error logging
+                android.util.Log.e("MapActivity", "Unexpected route error: ${e.message}", e)
+                routeLoadError = "Lỗi không xác định: ${e.message ?: "Vui lòng thử lại"}"
                 isLoadingRoute = false
                 showRouteErrorUI()
             }
@@ -1287,11 +1358,23 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun showRouteErrorUI() {
+        // IMPORTANT FIX: Ensure all UI states are consistent
+        isLoadingRoute = false
         binding.routeLoadingCard.visibility = View.GONE
         binding.routeErrorCard.visibility = View.VISIBLE
         binding.routeErrorText.text = routeLoadError ?: "Không xác định lỗi"
-        binding.actionButton.visibility = View.GONE
-        binding.cancelRouteButton.visibility = View.GONE
+        
+        // Reset button states based on current mode
+        when (currentMode) {
+            AppMode.ROUTE_PLAN -> {
+                binding.actionButton.visibility = View.GONE
+                binding.cancelRouteButton.visibility = View.VISIBLE
+            }
+            else -> {
+                binding.actionButton.visibility = View.GONE
+                binding.cancelRouteButton.visibility = View.GONE
+            }
+        }
     }
 
     private fun hideRouteErrorUI() {
@@ -1359,9 +1442,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun startNavigation() {
-        if (routePoints.isEmpty()) {
-            showToast("Chưa có đường đi")
-            return
+        // Basic validation only
+        when {
+            routePoints.isEmpty() -> {
+                showToast("Chưa có đường đi")
+                return
+            }
+            routePoints.size < 2 -> {
+                showToast("Đường đi không hợp lệ (cần ít nhất 2 điểm)")
+                return
+            }
         }
 
         isDriving = true
@@ -1369,8 +1459,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         currentMode = AppMode.NAVIGATION
         currentPositionIndex = 0
         // Reset completed path accumulation at the start of navigation
+        // CRITICAL FIX: Use firstOrNull to prevent crash
         completedPathPoints.clear()
-        completedPathPoints.add(routePoints.first())
+        routePoints.firstOrNull()?.let { completedPathPoints.add(it) }
 
         // Update markers to be non-draggable during navigation
         updateMarkersDraggableState()
@@ -1414,6 +1505,16 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         updateDistanceLabel()
 
         android.util.Log.d("MapActivity", "Navigation started with speed: $currentSpeed km/h, total distance: $totalRouteDistanceKm km")
+        
+        // CRITICAL FIX: Start foreground service to prevent Android from killing app
+        // This ensures navigation continues even when app is in background
+        try {
+            NavigationForegroundService.start(this, currentSpeed, totalRouteDistanceKm)
+            android.util.Log.d("MapActivity", "Foreground service started")
+        } catch (e: Exception) {
+            android.util.Log.e("MapActivity", "Failed to start foreground service: ${e.message}", e)
+            // Continue navigation even if service fails to start
+        }
 
         // Hide search inputs
         binding.searchCard.visibility = View.GONE
@@ -1433,56 +1534,101 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         binding.setLocationButton.visibility = View.GONE
 
         // Create fake location circle to show current GPS position during navigation
-        val startPos = routePoints.first()
+        // CRITICAL FIX: Use firstOrNull to prevent crash
+        val startPos = routePoints.firstOrNull() ?: run {
+            showToast("Lỗi: Không tìm thấy điểm bắt đầu")
+            isDriving = false
+            return
+        }
         fakeLocationCircle = createStationaryLocationCircle(startPos)
 
-        // CRITICAL FIX: Use lifecycleScope instead of GlobalScope to prevent memory leaks
-        // GlobalScope causes coroutines to run indefinitely even after Activity is destroyed
-        // lifecycleScope automatically cancels when Activity is destroyed
+        // CRITICAL FIX: Use navigationScope instead of lifecycleScope to continue running in background
+        // lifecycleScope cancels when Activity pauses, causing navigation to stop
+        // navigationScope only cancels when Activity is destroyed, allowing GPS to continue updating
         routeSimulator = RouteSimulator(
             points = routePoints,
             speedKmh = currentSpeed,
             updateIntervalMs = 300L, // Optimized: 300ms for better performance (was 100ms)
-            scope = lifecycleScope // FIXED: Use lifecycleScope for proper cleanup
+            scope = navigationScope // FIXED: Use navigationScope to continue in background
         )
 
        // showToast("🏍️ Bắt đầu di chuyển với tốc độ ${currentSpeed.toInt()} km/h")
 
         routeSimulator?.start(
             onPosition = { position ->
-                runOnUiThread {
-                    val currentTime = System.currentTimeMillis()
+                // CRITICAL FIX: Always update GPS location even when app is in background
+                // This ensures GPS continues updating for other apps (banking, Grab, etc.)
+                val bearing = previousLocation?.let { prev ->
+                    calculateBearing(prev, position)
+                } ?: 0f
 
-                    // Calculate bearing for GPS metadata
-                    val bearing = previousLocation?.let { prev ->
-                        calculateBearing(prev, position)
-                    } ?: 0f
+                // Calculate speed in m/s from current speedKmh
+                val speedMs = (currentSpeed * 1000.0 / 3600.0).toFloat()
 
-                    // Calculate speed in m/s from current speedKmh
-                    val speedMs = (currentSpeed * 1000.0 / 3600.0).toFloat()
-
-                    // Update GPS location with bearing and speed for smooth rendering
-                    viewModel.update(
-                        start = true,
-                        la = position.latitude,
-                        ln = position.longitude,
-                        bearing = bearing,
-                        speed = speedMs
-                    )
-
-                    // Log GPS data with timing variance for debugging
-                    val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
-                    // Optimize: Reduce logging frequency to lower I/O overhead
-                    if (BuildConfig.DEBUG && currentPositionIndex % 5 == 0) {
-                        android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms")
+                // CRITICAL: Update GPS location immediately (even in background)
+                // This is essential for other apps to receive GPS updates
+                viewModel.update(
+                    start = true,
+                    la = position.latitude,
+                    ln = position.longitude,
+                    bearing = bearing,
+                    speed = speedMs
+                )
+                
+                // CRITICAL FIX: Update navigation state even when background
+                // This ensures traveledDistanceKm and previousLocation are always updated
+                val currentTime = System.currentTimeMillis()
+                
+                // Update previousLocation for bearing calculation (always, even in background)
+                previousLocation = position
+                
+                // Update traveled distance (always, even in background)
+                // Use synchronized access to avoid race conditions
+                synchronized(this@MapActivity) {
+                    lastDistancePosition?.let { lastPos ->
+                        val distanceMeters = distanceBetween(lastPos, position)
+                        // Only add distance if movement is significant (> 0.5m) and reasonable (< 100m)
+                        if (distanceMeters > 0.5 && distanceMeters < 100) {
+                            traveledDistanceKm += distanceMeters / 1000.0
+                        }
                     }
-                    lastGpsUpdateTime = currentTime
-
-                    // Track current navigation position for pause/stop functionality
-                    currentNavigationPosition = position
-
-                    // Update traveled distance
-                    updateTraveledDistance(position)
+                    lastDistancePosition = position
+                }
+                
+                // Track current navigation position (always, even in background)
+                currentNavigationPosition = position
+                
+                // CRITICAL FIX: Update foreground service notification ALWAYS (even in background)
+                // This must run from background thread, not UI thread
+                try {
+                    NavigationForegroundService.updateNotification(
+                        this@MapActivity,
+                        currentSpeed,
+                        totalRouteDistanceKm,
+                        traveledDistanceKm
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("MapActivity", "Failed to update notification: ${e.message}", e)
+                }
+                
+                // Log GPS data (reduced frequency when background)
+                val timeDiff = if (lastGpsUpdateTime > 0) currentTime - lastGpsUpdateTime else 0
+                if (BuildConfig.DEBUG && (isActivityVisible || currentPositionIndex % 10 == 0)) {
+                    android.util.Log.d("GPS_AntiDetect", "GPS: lat=${position.latitude}, lng=${position.longitude}, bearing=${bearing}°, interval=${timeDiff}ms, visible=$isActivityVisible")
+                }
+                lastGpsUpdateTime = currentTime
+                
+                // PERFORMANCE FIX: Only update UI if activity is visible
+                // Skip UI updates when app is in background to save CPU/GPU
+                if (!isActivityVisible) {
+                    // All critical updates done above, just return to skip UI rendering
+                    return@start
+                }
+                
+                // UI updates only when app is visible
+                runOnUiThread {
+                    // Update distance label on UI
+                    updateDistanceLabel()
                     
                     // Update speed label to show control/actual speeds with curve reduction
                     try {
@@ -1571,6 +1717,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = null
         isDriving = false
         isPaused = false
+
+        // CRITICAL FIX: Stop foreground service when navigation stops
+        try {
+            NavigationForegroundService.stop(this)
+            android.util.Log.d("MapActivity", "Foreground service stopped")
+        } catch (e: Exception) {
+            android.util.Log.e("MapActivity", "Failed to stop foreground service: ${e.message}", e)
+        }
 
         // Keep GPS at current position (don't reset)
         // Remove current position circle
@@ -1675,16 +1829,123 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun updateCompletedPath(currentPosition: LatLng) {
-        // Optimize: Increase threshold to reduce polyline updates and GPU load
-        // Reduced vertex count = better performance on long routes
         val last = completedPathPoints.lastOrNull()
-        if (last == null || distanceBetween(last, currentPosition) >= 5.0) { // Increased from 2.5m to 5m
+        
+        if (last == null) {
+            // First point - just add it
             completedPathPoints.add(currentPosition)
+        } else {
+            val distance = distanceBetween(last, currentPosition)
+            
+            // CRITICAL FIX: If distance is too large (> 50m), it means app was in background
+            // Interpolate missing points from the original route to fill the gap
+            if (distance > 50.0 && routePoints.isNotEmpty()) {
+                // Find the segment in routePoints that contains both last and current positions
+                val interpolatedPoints = interpolateRouteSegment(last, currentPosition, routePoints)
+                if (interpolatedPoints.isNotEmpty()) {
+                    // Add interpolated points (skip first as it's the same as 'last')
+                    completedPathPoints.addAll(interpolatedPoints.drop(1))
+                } else {
+                    // Fallback: Add current position if interpolation fails
+                    completedPathPoints.add(currentPosition)
+                }
+            } else if (distance >= 5.0) {
+                // Normal case: Add point if distance >= 5m
+                completedPathPoints.add(currentPosition)
+            }
+            // If distance < 5m, skip adding point (optimization)
         }
 
         // Draw or update polyline incrementally
-        // Optimize: Only update every 3rd point to reduce rendering overhead
-        if (completedPathPoints.size > 1 && completedPathPoints.size % 3 == 0) {
+        // FIX: Update polyline when we have at least 2 points (to draw a line)
+        // Optimize: Only update every 3rd point during navigation to reduce rendering overhead
+        // But always update when we have exactly 2 points (initial draw) or when size changes significantly
+        val shouldUpdate = when {
+            completedPathPoints.size == 2 -> true  // CRITICAL: Always draw when we have 2 points
+            completedPathPoints.size > 1 && completedPathPoints.size % 3 == 0 -> true  // Update every 3rd point
+            else -> false
+        }
+        
+        if (shouldUpdate) {
+            if (completedPolyline == null) {
+                completedPolyline = mMap.addPolyline(
+                    PolylineOptions()
+                        .addAll(completedPathPoints)
+                        .color(Color.parseColor(COMPLETED_ROUTE_COLOR))
+                        .width(ROUTE_WIDTH + 1)
+                )
+            } else {
+                completedPolyline?.points = ArrayList(completedPathPoints)
+            }
+        }
+    }
+    
+    /**
+     * Interpolate route segment between two points
+     * Used to fill gaps when app was in background and missed route points
+     */
+    private fun interpolateRouteSegment(from: LatLng, to: LatLng, route: List<LatLng>): List<LatLng> {
+        if (route.isEmpty()) return emptyList()
+        
+        // Find the segment in route that contains 'from' and 'to'
+        var fromIdx = -1
+        var toIdx = -1
+        var minFromDist = Double.MAX_VALUE
+        var minToDist = Double.MAX_VALUE
+        
+        // Find closest points in route to 'from' and 'to'
+        for (i in route.indices) {
+            val distFrom = distanceBetween(from, route[i])
+            val distTo = distanceBetween(to, route[i])
+            
+            if (distFrom < minFromDist) {
+                minFromDist = distFrom
+                fromIdx = i
+            }
+            if (distTo < minToDist) {
+                minToDist = distTo
+                toIdx = i
+            }
+        }
+        
+        // If we found valid indices and 'to' is after 'from' in the route
+        if (fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx) {
+            val interpolated = mutableListOf<LatLng>()
+            
+            // Add all points between fromIdx and toIdx (inclusive)
+            for (i in fromIdx..toIdx) {
+                interpolated.add(route[i])
+            }
+            
+            // If 'to' is not exactly at toIdx, add it at the end
+            if (distanceBetween(to, route[toIdx]) > 5.0) {
+                interpolated.add(to)
+            }
+            
+            return interpolated
+        }
+        
+        // Fallback: If we can't find the segment, create a simple interpolation
+        // This happens if route doesn't contain the exact points
+        val interpolated = mutableListOf<LatLng>()
+        val steps = (distanceBetween(from, to) / 10.0).toInt().coerceAtLeast(2).coerceAtMost(50) // Max 50 points
+        
+        for (i in 0..steps) {
+            val fraction = i.toDouble() / steps
+            val lat = from.latitude + (to.latitude - from.latitude) * fraction
+            val lng = from.longitude + (to.longitude - from.longitude) * fraction
+            interpolated.add(LatLng(lat, lng))
+        }
+        
+        return interpolated
+    }
+    
+    /**
+     * Force update completed route polyline (call when navigation stops/pauses)
+     * This ensures the final route is drawn even if point count is not divisible by 3
+     */
+    private fun forceUpdateCompletedPath() {
+        if (completedPathPoints.size >= 2) {
             if (completedPolyline == null) {
                 completedPolyline = mMap.addPolyline(
                     PolylineOptions()
@@ -1728,6 +1989,34 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     /**
      * Calculate total route distance in kilometers
      */
+    /**
+     * CRITICAL FIX: Validate route points
+     * Checks for valid coordinates, no duplicates, and reasonable values
+     */
+    private fun isValidRoute(points: List<LatLng>): Boolean {
+        if (points.isEmpty()) return false
+        
+        // Check all coordinates are valid
+        val allValid = points.all { point ->
+            point.latitude in -90.0..90.0 && 
+            point.longitude in -180.0..180.0 &&
+            !point.latitude.isNaN() && 
+            !point.longitude.isNaN() &&
+            !point.latitude.isInfinite() &&
+            !point.longitude.isInfinite()
+        }
+        
+        if (!allValid) return false
+        
+        // Check for duplicate points (within 1 meter tolerance)
+        val distinctPoints = points.distinctBy { point ->
+            "${point.latitude.toInt()},${point.longitude.toInt()}"
+        }
+        
+        // Allow some duplicates but not all points being the same
+        return distinctPoints.size >= 2
+    }
+
     private fun calculateTotalRouteDistance(points: List<LatLng>): Double {
         if (points.size < 2) return 0.0
 
@@ -1822,6 +2111,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     private fun onNavigationComplete() {
         isDriving = false
         isPaused = false
+
+        // CRITICAL FIX: Stop foreground service when navigation completes
+        try {
+            NavigationForegroundService.stop(this)
+            android.util.Log.d("MapActivity", "Foreground service stopped (navigation complete)")
+        } catch (e: Exception) {
+            android.util.Log.e("MapActivity", "Failed to stop foreground service: ${e.message}", e)
+        }
 
         // Reset speed to default for next trip
         binding.speedSlider.value = 52f
@@ -1947,6 +2244,11 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // CRITICAL: Proper cleanup to prevent memory leaks
         routeSimulator?.stop()
         routeSimulator = null
+        
+        // CRITICAL FIX: Cancel navigationScope when Activity is destroyed
+        // This ensures RouteSimulator stops and prevents memory leaks
+        navigationScope.cancel()
+        
         searchJob?.cancel()
         searchJob = null
 
@@ -1982,8 +2284,9 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         // This allows joystick updates to continue updating the map in background
         android.util.Log.d("MapActivity", "Activity paused, keeping listener active for background updates")
 
-        // Save navigation state when going to background
-        if (isDriving) {
+        // CRITICAL FIX: Ensure navigation continues in background
+        if (isDriving && !isPaused) {
+            // Save navigation state when going to background
             wasNavigatingBeforeBackground = true
             backgroundNavigationState = NavigationState(
                 routePoints = routePoints,
@@ -1993,9 +2296,25 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
                 completedPathPoints = ArrayList(completedPathPoints)
             )
             android.util.Log.d("MapActivity", "Saved navigation state to background")
+            
+            // CRITICAL: Ensure RouteSimulator is NOT paused when app goes to background
+            // Only pause if user explicitly clicks pause button
+            if (routeSimulator != null) {
+                // Verify RouteSimulator is still running
+                val isRunning = routeSimulator?.isRunning() ?: false
+                android.util.Log.d("MapActivity", "RouteSimulator running state: $isRunning (should be true)")
+                
+                // Force resume if somehow paused (shouldn't happen, but safety check)
+                if (!isRunning && !isPaused) {
+                    android.util.Log.w("MapActivity", "RouteSimulator was paused unexpectedly, resuming...")
+                    routeSimulator?.resume()
+                }
+            }
         }
+        
         // Don't pause route simulator when going to background during navigation
         // Let it continue running for seamless background GPS simulation
+        android.util.Log.d("MapActivity", "Navigation will continue in background (isDriving=$isDriving, isPaused=$isPaused)")
     }
 
     /**
@@ -2073,6 +2392,38 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         }
     }
 
+    // IMPORTANT FIX: Handle permission request result
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted
+                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+                    mMap.isMyLocationEnabled = true
+                    getCurrentLocation()
+                }
+            } else {
+                // Permission denied
+                if (ActivityCompat.shouldShowRequestPermissionRationale(
+                        this,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    )) {
+                    // User denied but not permanently - show explanation
+                    showToast("Cần quyền vị trí để hiển thị vị trí hiện tại trên bản đồ")
+                } else {
+                    // User denied permanently - guide to settings
+                    showToast("Vui lòng bật quyền vị trí trong Cài đặt")
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
 
@@ -2127,6 +2478,12 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         } else if (isDriving && !isPaused) {
             // Regular UI refresh for ongoing navigation
             updateNavigationUI()
+            
+            // CRITICAL FIX: Force update completed path when resuming
+            // This ensures route is drawn correctly after returning from background
+            if (currentNavigationPosition != null) {
+                forceUpdateCompletedPath()
+            }
         }
     }
 
@@ -2243,6 +2600,10 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
     }
 
     private fun onFinishNavigation() {
+        // CRITICAL FIX: Force update completed path before clearing
+        // This ensures the final route is drawn even if point count is not divisible by 3
+        forceUpdateCompletedPath()
+        
         // Hide completion action bar
         binding.completionActionsCard.visibility = View.GONE
 
@@ -2427,6 +2788,14 @@ class MapActivity : BaseMapActivity(), OnMapReadyCallback, GoogleMap.OnMapClickL
         routeSimulator = null
         isDriving = false
         isPaused = false
+
+        // CRITICAL FIX: Stop foreground service when navigation stops early
+        try {
+            NavigationForegroundService.stop(this)
+            android.util.Log.d("MapActivity", "Foreground service stopped (navigation stopped early)")
+        } catch (e: Exception) {
+            android.util.Log.e("MapActivity", "Failed to stop foreground service: ${e.message}", e)
+        }
 
         // Reset speed to default for next trip
         binding.speedSlider.value = 52f

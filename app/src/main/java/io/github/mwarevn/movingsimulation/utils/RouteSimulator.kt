@@ -147,10 +147,11 @@ class RouteSimulator(
      * Enhanced for multiple consecutive curves with angle accumulation
      */
     private fun detectCurveAndReduceSpeed(from: LatLng, to: LatLng, next: LatLng?, ahead: LatLng? = null): Double {
-        // Check if auto curve speed is enabled
+        // CRITICAL FIX: Check if auto curve speed is enabled (read fresh each time)
         val autoCurveEnabled = try {
             io.github.mwarevn.movingsimulation.utils.PrefManager.autoCurveSpeed
         } catch (e: Throwable) {
+            android.util.Log.w("RouteSimulator", "Failed to read autoCurveSpeed, defaulting to enabled: ${e.message}")
             true  // Default to enabled
         }
 
@@ -161,7 +162,7 @@ class RouteSimulator(
         }
 
         if (next == null) {
-            // No next point - gradual recovery
+            // No next point - gradual recovery to full speed
             currentCurveReduction = minOf(1.0, currentCurveReduction + 0.15)
             return currentCurveReduction
         }
@@ -175,6 +176,12 @@ class RouteSimulator(
         if (angleDiff > 180) angleDiff -= 360
         if (angleDiff < -180) angleDiff += 360
         angleDiff = Math.abs(angleDiff)
+        
+        // CRITICAL FIX: Ensure angleDiff is valid (not NaN or Infinite)
+        if (angleDiff.isNaN() || angleDiff.isInfinite()) {
+            android.util.Log.w("RouteSimulator", "Invalid angleDiff detected, using 0")
+            angleDiff = 0.0
+        }
 
         // PREDICTIVE LOGIC: Also check the curve AFTER next point (lookahead 2 segments)
         // This allows us to start braking BEFORE entering the main curve
@@ -191,18 +198,24 @@ class RouteSimulator(
             maxAngleDiff = maxOf(angleDiff, nextAngleDiff)
         }
 
-        // Calculate target reduction based on angle (now with lookahead)
+        // CRITICAL FIX: Calculate target reduction based on angle (now with lookahead)
         // More angle = more reduction (larger curve = slower)
+        // Ensure maxAngleDiff is valid before using
+        val validMaxAngleDiff = if (maxAngleDiff.isNaN() || maxAngleDiff.isInfinite()) 0.0 else maxAngleDiff
         val targetReduction = when {
-            maxAngleDiff < 20.0 -> 1.0      // No curve
-            maxAngleDiff < 40.0 -> 0.85     // Slight curve
-            maxAngleDiff < 60.0 -> 0.75     // Moderate curve
-            maxAngleDiff < 90.0 -> 0.65     // Significant curve
+            validMaxAngleDiff < 20.0 -> 1.0      // No curve
+            validMaxAngleDiff < 40.0 -> 0.85     // Slight curve
+            validMaxAngleDiff < 60.0 -> 0.75     // Moderate curve
+            validMaxAngleDiff < 90.0 -> 0.65     // Significant curve
             else -> 0.50                     // Sharp turn
         }
 
-        // Smooth transition to target (85% old + 15% new)
+        // CRITICAL FIX: Smooth transition to target (85% old + 15% new)
+        // This ensures gradual speed reduction, not sudden jumps
         currentCurveReduction = currentCurveReduction * 0.85 + targetReduction * 0.15
+        
+        // Ensure reduction is in valid range
+        currentCurveReduction = currentCurveReduction.coerceIn(0.5, 1.0)
 
         return currentCurveReduction
     }
@@ -215,16 +228,19 @@ class RouteSimulator(
         savedSpeedKmh = speedKmh
         SpeedSyncManager.setSavedSpeed(speedKmh.toFloat())
 
-        // Reset curve reduction at start
-        currentCurveReduction = 1.0        // Signal to reset - set actual speed to 0 initially
-        SpeedSyncManager.setControlSpeed(speedKmh.toFloat())
-        SpeedSyncManager.updateActualSpeed(0f)
-        SpeedSyncManager.updateCurveReduction(1f)
+        // CRITICAL FIX: Reset curve reduction at start, but start with full speed
+        currentCurveReduction = 1.0        // Start with no reduction
+        SpeedSyncManager.setControlSpeed(speedKmh.toFloat())  // User's set speed
+        SpeedSyncManager.updateActualSpeed(speedKmh.toFloat())  // Start with full speed (will reduce on curves)
+        SpeedSyncManager.updateCurveReduction(1f)  // No reduction initially
+        
+        android.util.Log.d("RouteSimulator", "Navigation started: baseSpeed=${speedKmh}km/h, autoCurve=${io.github.mwarevn.movingsimulation.utils.PrefManager.autoCurveSpeed}")
 
         job = scope.launch {
-            var idx = 0
+            try {
+                var idx = 0
 
-            while (idx < points.size - 1 && isActive) {
+                while (idx < points.size - 1 && isActive) {
                 val a = points[idx]
                 val b = points[idx + 1]
                 val c = if (idx + 2 < points.size) points[idx + 2] else null  // Next segment for curve detection
@@ -274,12 +290,19 @@ class RouteSimulator(
                     // Generate realistic update interval
                     val currentUpdateInterval = getRealisticUpdateInterval()
 
-                    // Calculate current speed with curve reduction applied
+                    // CRITICAL FIX: Calculate current speed with curve reduction applied
                     // This makes speed automatically reduce on curves to look realistic
-                    val adjustedSpeedKmh = speedKmh * finalCurveReduction
+                    // Use savedSpeedKmh (user's set speed) instead of speedKmh to ensure correct base speed
+                    val baseSpeed = savedSpeedKmh  // Use saved speed (user's original setting)
+                    val adjustedSpeedKmh = baseSpeed * finalCurveReduction
+
+                    // DEBUG: Log curve reduction for troubleshooting (reduced frequency)
+                    if (idx % 10 == 0 && finalCurveReduction < 0.99) {
+                        android.util.Log.d("RouteSimulator", "Curve detected: reduction=${String.format("%.2f", finalCurveReduction)}, base=${baseSpeed.toInt()}km/h, adjusted=${adjustedSpeedKmh.toInt()}km/h, angleDensity=${String.format("%.1f", accumulatedAngleDensityAhead)}")
+                    }
 
                     // Sync actual simulation speed with Xposed hooks via SpeedSyncManager
-                    SpeedSyncManager.setControlSpeed(speedKmh.toFloat())  // Control speed (constant)
+                    SpeedSyncManager.setControlSpeed(baseSpeed.toFloat())  // Control speed (user's set speed, constant)
                     SpeedSyncManager.updateActualSpeed(adjustedSpeedKmh.toFloat())  // Actual speed (varies with curves)
                     SpeedSyncManager.updateCurveReduction(finalCurveReduction.toFloat())  // Curve factor for sensors
 
@@ -321,6 +344,12 @@ class RouteSimulator(
 
             // Finished route
             onComplete?.invoke()
+            } catch (e: Exception) {
+                // IMPORTANT FIX: Handle exceptions in RouteSimulator
+                android.util.Log.e("RouteSimulator", "Error during navigation: ${e.message}", e)
+                // Navigation will stop, but at least we log the error
+                // Could notify user or handle error appropriately
+            }
         }
     }
 
@@ -400,11 +429,14 @@ class RouteSimulator(
 
     fun setSpeedKmh(v: Double) {
         speedKmh = v
-        savedSpeedKmh = v
+        savedSpeedKmh = v  // CRITICAL: Update saved speed (base speed for curve reduction)
         SpeedSyncManager.setSavedSpeed(v.toFloat())
-        // Sync immediately when user changes speed (apply curve reduction)
+        // CRITICAL FIX: Sync immediately when user changes speed (apply current curve reduction)
         if (isRunning()) {
-            SpeedSyncManager.updateActualSpeed((v * currentCurveReduction).toFloat())
+            val adjustedSpeed = v * currentCurveReduction
+            SpeedSyncManager.setControlSpeed(v.toFloat())  // User's new set speed
+            SpeedSyncManager.updateActualSpeed(adjustedSpeed.toFloat())  // Apply current curve reduction
+            android.util.Log.d("RouteSimulator", "Speed updated: set=${v.toInt()}km/h, reduction=${String.format("%.2f", currentCurveReduction)}, actual=${adjustedSpeed.toInt()}km/h")
         }
     }
 }
