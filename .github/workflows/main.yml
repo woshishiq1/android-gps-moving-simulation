@@ -1,0 +1,165 @@
+
+name: 同步上游代码 & Release（保留历史 + 可选完全镜像）
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      FULL_MIRROR_RELEASE: false  # true = 完全镜像 Release，false = 仅同步最新 Release
+    steps:
+      # -------------------------------
+      # Checkout 仓库
+      # -------------------------------
+      - name: Checkout 本仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -------------------------------
+      # 设置 Git 用户身份
+      # -------------------------------
+      - name: 设置 Git 身份
+        run: |
+          git config --global user.name "woshishiq1"
+          git config --global user.email "1987669587@qq.com"
+
+      # -------------------------------
+      # 同步上游代码（保留 commit 历史 + tag 自动覆盖）
+      # -------------------------------
+      - name: 同步上游代码（保留历史 + tag 覆盖）
+        run: |
+          set -e
+          git remote add upstream https://github.com/minhdevs/android-gps-moving-simulation.git || true
+          
+          # 删除本地已有 tags，防止冲突
+          git tag -l | xargs -n 1 git tag -d || true
+          
+          # 拉取上游分支和 tags
+          git fetch upstream --tags
+          git fetch upstream main
+
+          # 保存 workflow 文件
+          mkdir -p /tmp/my-workflow
+          cp -a .github /tmp/my-workflow/ 2>/dev/null || true
+
+          git checkout main
+
+          # 合并上游 main 分支
+          git merge --ff-only upstream/main || git merge --allow-unrelated-histories -m "Merge upstream main"
+
+          # 恢复 workflow
+          rm -rf .github 2>/dev/null || true
+          cp -a /tmp/my-workflow/.github . 2>/dev/null || true
+
+          # 如果 workflow 有变动，提交自定义 commit
+          git add -A
+          git diff --cached --quiet || git commit -m "Sync upstream $(date +%F)"
+
+          # 强制推送 main 分支
+          git push origin main --force
+
+          # 强制推送 tags
+          git push origin --tags --force
+
+      # -------------------------------
+      # 安装 gh CLI
+      # -------------------------------
+      - name: 安装 gh CLI
+        run: |
+          sudo mkdir -p -m 755 /etc/apt/keyrings
+          wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+          sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update && sudo apt install gh -y
+
+      # -------------------------------
+      # 同步 Release（可选完全镜像）
+      # -------------------------------
+      - name: 同步 Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          UPSTREAM="minhdevs/android-gps-moving-simulation"
+          TARGET="woshishiq1/android-gps-moving-simulation"
+
+          mkdir -p /tmp/assets && cd /tmp/assets
+
+          if [[ "$FULL_MIRROR_RELEASE" == "true" ]]; then
+            echo "完全镜像模式：同步所有 Release 并删除已不存在的 Release"
+
+            # 获取上游所有 Release 标签
+            upstream_tags=$(gh release list --repo "$UPSTREAM" --limit 1000 --json tagName -q '.[].tagName' 2>/dev/null || echo "")
+
+            # 删除目标仓库已不存在于上游的 Release
+            for tag in $(gh release list --repo "$TARGET" --limit 1000 --json tagName -q '.[].tagName' 2>/dev/null); do
+              if ! echo "$upstream_tags" | grep -Fxq "$tag"; then
+                echo "删除已不存在的 Release：$tag"
+                gh release delete "$tag" --repo "$TARGET" --yes
+                git push origin ":refs/tags/$tag" --no-verify 2>/dev/null || true
+              fi
+            done
+
+            # 下载并同步所有上游 Release
+            for tag in $upstream_tags; do
+              # 如果 Release 已存在，跳过
+              gh release view "$tag" --repo "$TARGET" &>/dev/null && continue
+
+              notes=$(gh release view "$tag" --repo "$UPSTREAM" --json body -q '.body')
+              is_pre=$(gh release view "$tag" --repo "$UPSTREAM" --json isPrerelease -q '.isPrerelease')
+
+              gh release download "$tag" --repo "$UPSTREAM" --skip-existing || true
+              mapfile -t files < <(find . -type f ! -name ".*")
+
+              if [[ ${#files[@]} -eq 0 ]]; then
+                [[ "$is_pre" == "true" ]] && gh release create "$tag" --repo "$TARGET" --notes "$notes" --prerelease || gh release create "$tag" --repo "$TARGET" --notes "$notes"
+              else
+                [[ "$is_pre" == "true" ]] && gh release create "$tag" --repo "$TARGET" --notes "$notes" --prerelease "${files[@]}" || gh release create "$tag" --repo "$TARGET" --notes "$notes" "${files[@]}"
+              fi
+              rm -rf *
+            done
+
+          else
+            echo "默认模式：只同步最新 Release（优先正式版 → 无正式版降级同步预发行版）"
+
+            latest=$(gh release list --repo "$UPSTREAM" --exclude-pre-releases --limit 1 \
+                     --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+
+            if [[ -z "$latest" ]]; then
+              latest=$(gh release list --repo "$UPSTREAM" --limit 1 \
+                       --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+            fi
+
+            if [[ -z "$latest" ]]; then
+              echo "上游无 Release，跳过"
+              exit 0
+            fi
+
+            echo "准备同步 Release: $latest"
+
+            if gh release view "$latest" --repo "$TARGET" &>/dev/null; then
+              echo "Release $latest 已存在，跳过"
+              exit 0
+            fi
+
+            notes=$(gh release view "$latest" --repo "$UPSTREAM" --json body -q '.body')
+            is_pre=$(gh release view "$latest" --repo "$UPSTREAM" --json isPrerelease -q '.isPrerelease')
+
+            gh release download "$latest" --repo "$UPSTREAM" --skip-existing || true
+            mapfile -t files < <(find . -type f ! -name ".*")
+
+            if [[ ${#files[@]} -eq 0 ]]; then
+              [[ "$is_pre" == "true" ]] && gh release create "$latest" --repo "$TARGET" --notes "$notes" --prerelease || gh release create "$latest" --repo "$TARGET" --notes "$notes"
+            else
+              [[ "$is_pre" == "true" ]] && gh release create "$latest" --repo "$TARGET" --notes "$notes" --prerelease "${files[@]}" || gh release create "$latest" --repo "$TARGET" --notes "$notes" "${files[@]}"
+            fi
+          fi
+
+          echo "Release 同步完成！"
