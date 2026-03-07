@@ -35,5 +35,12 @@ class HookEntry : IXposedHookLoadPackage {
         } catch (e: Throwable) {
             XposedBridge.log("GPS Setter: Failed to init LocationHook for ${lpparam.packageName}: ${e.message}")
         }
+
+        // 3. Khởi tạo Hook cảm biến (sensor spoofing)
+        try {
+            SensorHook.initHooks(lpparam)
+        } catch (e: Throwable) {
+            XposedBridge.log("GPS Setter: Failed to init SensorHook for ${lpparam.packageName}: ${e.message}")
+        }
     }
 }

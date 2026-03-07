@@ -26,7 +26,6 @@ object PrefManager {
     private const val ACCURACY_SETTING = "accuracy_level"
     private const val MAP_TYPE = "map_type"
     private const val DARK_THEME = "dark_theme"
-    private const val DISABLE_UPDATE = "update_disabled"
     private const val ENABLE_JOYSTICK = "joystick_enabled"
     private const val MAPBOX_API_KEY = "mapbox_api_key"
     private const val VEHICLE_TYPE = "vehicle_type"
@@ -37,6 +36,13 @@ object PrefManager {
     private const val SENSOR_SPOOF = "sensor_spoof"
     private const val NETWORK_SIMULATION = "network_sim"
     private const val ACCURACY_SPOOF = "accuracy_spoof"
+    private const val BLUETOOTH_SPOOF = "bluetooth_spoof"
+    private const val CELL_SPOOF = "cell_spoof"
+    private const val GEOCODER_SPOOF = "geocoder_spoof"
+    private const val WIFI_SCAN_SPOOF = "wifi_scan_spoof"
+    private const val BT_SCAN_SPOOF = "bt_scan_spoof"
+    private const val LOCATION_MONITOR = "location_monitor"
+    private const val BLOCKED_LOCATION_APPS = "blocked_location_apps"
 
     private val pref: SharedPreferences by lazy {
         val prefsFile = "${BuildConfig.APPLICATION_ID}_prefs"
@@ -83,6 +89,10 @@ object PrefManager {
         get() = pref.getBoolean(RANDOM_POSITION, false)
         set(value) { pref.edit().putBoolean(RANDOM_POSITION, value).commit(); fixPermissions() }
 
+    var isUpdateDisabled: Boolean
+        get() = pref.getBoolean("disable_update", false)
+        set(value) { pref.edit().putBoolean("disable_update", value).commit(); fixPermissions() }
+
     var accuracy: String?
         get() = pref.getString(ACCURACY_SETTING, "10")
         set(value) { pref.edit().putString(ACCURACY_SETTING, value).commit(); fixPermissions() }
@@ -100,6 +110,46 @@ object PrefManager {
         get() = pref.getBoolean(ACCURACY_SPOOF, true)
         set(value) { pref.edit().putBoolean(ACCURACY_SPOOF, value).commit(); fixPermissions() }
 
+    var isBluetoothSpoofEnabled: Boolean
+        get() = pref.getBoolean(BLUETOOTH_SPOOF, true)
+        set(value) { pref.edit().putBoolean(BLUETOOTH_SPOOF, value).commit(); fixPermissions() }
+
+    var isCellSpoofEnabled: Boolean
+        get() = pref.getBoolean(CELL_SPOOF, true)
+        set(value) { pref.edit().putBoolean(CELL_SPOOF, value).commit(); fixPermissions() }
+
+    var isGeocoderSpoofEnabled: Boolean
+        get() = pref.getBoolean(GEOCODER_SPOOF, true)
+        set(value) { pref.edit().putBoolean(GEOCODER_SPOOF, value).commit(); fixPermissions() }
+
+    var isWifiScanSpoofEnabled: Boolean
+        get() = pref.getBoolean(WIFI_SCAN_SPOOF, true)
+        set(value) { pref.edit().putBoolean(WIFI_SCAN_SPOOF, value).commit(); fixPermissions() }
+
+    var isBtScanSpoofEnabled: Boolean
+        get() = pref.getBoolean(BT_SCAN_SPOOF, true)
+        set(value) { pref.edit().putBoolean(BT_SCAN_SPOOF, value).commit(); fixPermissions() }
+
+    var isLocationMonitorEnabled: Boolean
+        get() = pref.getBoolean(LOCATION_MONITOR, false)
+        set(value) { pref.edit().putBoolean(LOCATION_MONITOR, value).commit() }
+
+    var blockedLocationApps: Set<String>
+        get() = pref.getStringSet(BLOCKED_LOCATION_APPS, emptySet()) ?: emptySet()
+        set(value) { pref.edit().putStringSet(BLOCKED_LOCATION_APPS, value).commit() }
+
+    fun addBlockedApp(packageName: String) {
+        val current = blockedLocationApps.toMutableSet()
+        current.add(packageName)
+        blockedLocationApps = current
+    }
+
+    fun removeBlockedApp(packageName: String) {
+        val current = blockedLocationApps.toMutableSet()
+        current.remove(packageName)
+        blockedLocationApps = current
+    }
+
     var mapType: Int
         get() = pref.getInt(MAP_TYPE, 1)
         set(value) { pref.edit().putInt(MAP_TYPE, value).commit() }
@@ -107,10 +157,6 @@ object PrefManager {
     var darkTheme: Int
         get() = pref.getInt(DARK_THEME, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         set(value) { pref.edit().putInt(DARK_THEME, value).commit() }
-
-    var isUpdateDisabled: Boolean
-        get() = pref.getBoolean(DISABLE_UPDATE, false)
-        set(value) { pref.edit().putBoolean(DISABLE_UPDATE, value).commit() }
 
     var isJoystickEnabled: Boolean
         get() = pref.getBoolean(ENABLE_JOYSTICK, false)

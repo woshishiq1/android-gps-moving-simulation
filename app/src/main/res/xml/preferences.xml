@@ -23,19 +23,19 @@
             android:entryValues="@array/map_value"
             android:defaultValue="1" />
 
-        <SwitchPreferenceCompat
-            android:title="@string/check_update"
-            android:summary="@string/check_update_summary"
-            android:icon="@drawable/ic_update"
-            android:widgetLayout="@layout/preference_switch_widget"
-            android:key="update_disabled"
-            android:defaultValue="false" />
-
         <Preference
             android:title="@string/enable_joystick"
             android:summary="@string/enable_joystick_summary"
             android:icon="@drawable/ic_joystick"
             android:key="joystick_enabled"
+            android:defaultValue="false" />
+
+        <SwitchPreferenceCompat
+            android:title="@string/check_update"
+            android:summary="@string/check_update_summary"
+            android:icon="@drawable/ic_update"
+            android:widgetLayout="@layout/preference_switch_widget"
+            android:key="disable_update"
             android:defaultValue="false" />
 
         <!-- Anti-Detection Menu -->

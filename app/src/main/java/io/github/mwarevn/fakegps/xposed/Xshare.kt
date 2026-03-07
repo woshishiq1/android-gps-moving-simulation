@@ -50,4 +50,19 @@ class Xshare {
 
     val isAccuracySpoofEnabled: Boolean
         get() = xPref.getBoolean("accuracy_spoof", true)
+
+    val isBluetoothSpoofEnabled: Boolean
+        get() = xPref.getBoolean("bluetooth_spoof", true)
+
+    val isCellSpoofEnabled: Boolean
+        get() = xPref.getBoolean("cell_spoof", true)
+
+    val isGeocoderSpoofEnabled: Boolean
+        get() = xPref.getBoolean("geocoder_spoof", true)
+
+    val isWifiScanSpoofEnabled: Boolean
+        get() = xPref.getBoolean("wifi_scan_spoof", true)
+
+    val isBtScanSpoofEnabled: Boolean
+        get() = xPref.getBoolean("bt_scan_spoof", true)
 }

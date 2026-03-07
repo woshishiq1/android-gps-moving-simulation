@@ -135,7 +135,7 @@ object LocationHook {
             hookGmsCore(lpparam)
         }
 
-        // Tầng 3: Hook sâu mức ứng dụng (Getters, Wifi, Request Updates)
+        // Tầng 3: Hook sâu mức ứng dụng (Getters, Wifi, BT, Cell, Geocoder, Request Updates)
         hookApplicationLevel(lpparam)
     }
 
@@ -149,7 +149,7 @@ object LocationHook {
                     if (isHookActive() && settings.isAccuracySpoofEnabled) {
                         val name = param.args[1] as? String ?: return
                         when (name) {
-                            "location_mode" -> param.result = 3 // Settings.Secure.LOCATION_MODE_HIGH_ACCURACY
+                            "location_mode" -> param.result = 3 // LOCATION_MODE_HIGH_ACCURACY
                             "location_accuracy_enabled" -> param.result = 1
                             "network_location_opt_in" -> param.result = 1
                         }
@@ -167,6 +167,28 @@ object LocationHook {
                     }
                 }
             })
+
+            // Hook Settings.Global for WiFi/BT scan always enabled
+            try {
+                val settingsGlobal = Settings.Global::class.java
+                XposedBridge.hookAllMethods(settingsGlobal, "getInt", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (!isHookActive()) return
+                        val name = param.args[1] as? String ?: return
+                        when (name) {
+                            "wifi_scan_always_enabled" -> {
+                                if (settings.isWifiScanSpoofEnabled) param.result = 1
+                            }
+                            "ble_scan_always_enabled" -> {
+                                if (settings.isBtScanSpoofEnabled) param.result = 1
+                            }
+                            "assisted_gps_enabled" -> {
+                                if (settings.isAccuracySpoofEnabled) param.result = 1
+                            }
+                        }
+                    }
+                })
+            } catch (e: Throwable) { }
         } catch (e: Throwable) { }
     }
 
@@ -314,7 +336,137 @@ object LocationHook {
                 } catch (e: Throwable) {}
             }
 
+            // Chống định vị qua Bluetooth (Nếu option được bật)
+            if (settings.isBluetoothSpoofEnabled) {
+                hookBluetooth(lpparam)
+            }
+
+            // Chống định vị qua Cell Tower (Nếu option được bật)
+            if (settings.isCellSpoofEnabled) {
+                hookCellTower(lpparam)
+            }
+
+            // Hook Geocoder (Nếu option được bật)
+            if (settings.isGeocoderSpoofEnabled) {
+                hookGeocoder(lpparam)
+            }
+
+            // Hook Location.isMock() (API 31+)
+            try {
+                XposedHelpers.findAndHookMethod(locClass, "isMock", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (isHookActive()) param.result = false
+                    }
+                })
+            } catch (e: Throwable) { /* Method may not exist on older APIs */ }
+
         } catch (e: Throwable) { }
+    }
+
+    /**
+     * Hook Bluetooth scanning to prevent BLE/Classic-based location fingerprinting.
+     */
+    private fun hookBluetooth(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            // Hook BluetoothAdapter.startDiscovery() -> return false
+            val btAdapterClass = XposedHelpers.findClassIfExists(
+                "android.bluetooth.BluetoothAdapter", lpparam.classLoader
+            )
+            if (btAdapterClass != null) {
+                XposedBridge.hookAllMethods(btAdapterClass, "startDiscovery", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (isHookActive()) param.result = false
+                    }
+                })
+                // Hook getBluetoothLeScanner() -> return null
+                try {
+                    XposedHelpers.findAndHookMethod(btAdapterClass, "getBluetoothLeScanner", object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            if (isHookActive()) param.result = null
+                        }
+                    })
+                } catch (e: Throwable) {}
+            }
+
+            // Hook BluetoothLeScanner.startScan to do nothing
+            val bleScannerClass = XposedHelpers.findClassIfExists(
+                "android.bluetooth.le.BluetoothLeScanner", lpparam.classLoader
+            )
+            if (bleScannerClass != null) {
+                XposedBridge.hookAllMethods(bleScannerClass, "startScan", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (isHookActive()) param.result = null
+                    }
+                })
+            }
+        } catch (e: Throwable) {
+            XposedBridge.log("GPS Setter: Failed to hook Bluetooth: ${e.message}")
+        }
+    }
+
+    /**
+     * Hook Cell tower APIs to prevent cell-based location triangulation.
+     */
+    private fun hookCellTower(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            val tmClass = XposedHelpers.findClassIfExists(
+                "android.telephony.TelephonyManager", lpparam.classLoader
+            ) ?: return
+
+            // getCellLocation() -> null
+            try {
+                XposedBridge.hookAllMethods(tmClass, "getCellLocation", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (isHookActive()) param.result = null
+                    }
+                })
+            } catch (e: Throwable) {}
+
+            // getAllCellInfo() -> empty list
+            try {
+                XposedBridge.hookAllMethods(tmClass, "getAllCellInfo", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (isHookActive()) param.result = emptyList<Any>()
+                    }
+                })
+            } catch (e: Throwable) {}
+
+            // getNeighboringCellInfo() -> empty list
+            try {
+                @Suppress("DEPRECATION")
+                XposedBridge.hookAllMethods(tmClass, "getNeighboringCellInfo", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (isHookActive()) param.result = emptyList<Any>()
+                    }
+                })
+            } catch (e: Throwable) {}
+        } catch (e: Throwable) {
+            XposedBridge.log("GPS Setter: Failed to hook CellTower: ${e.message}")
+        }
+    }
+
+    /**
+     * Hook Geocoder.getFromLocation() to return address matching fake coordinates.
+     */
+    private fun hookGeocoder(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            val geocoderClass = XposedHelpers.findClassIfExists(
+                "android.location.Geocoder", lpparam.classLoader
+            ) ?: return
+
+            // Hook getFromLocation to replace lat/lng arguments with fake location
+            XposedBridge.hookAllMethods(geocoderClass, "getFromLocation", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (isHookActive() && param.args.size >= 2) {
+                        updateLocation()
+                        param.args[0] = newlat
+                        param.args[1] = newlng
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            XposedBridge.log("GPS Setter: Failed to hook Geocoder: ${e.message}")
+        }
     }
 
     private fun isHookActive(): Boolean {

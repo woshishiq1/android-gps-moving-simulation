@@ -1,66 +1,132 @@
 package io.github.mwarevn.fakegps.ui
 
-import android.graphics.Color
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
-import android.view.MenuItem
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import io.github.mwarevn.fakegps.databinding.ActivityAntiDetectionSettingsBinding
+import com.google.android.material.materialswitch.MaterialSwitch
+import io.github.mwarevn.fakegps.R
+import io.github.mwarevn.fakegps.utils.LocationAccessMonitorService
 import io.github.mwarevn.fakegps.utils.PrefManager
 
 class AntiDetectionSettingsActivity : AppCompatActivity() {
 
-    private val binding by lazy {
-        ActivityAntiDetectionSettingsBinding.inflate(layoutInflater)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
-        setContentView(binding.root)
+        setContentView(R.layout.activity_anti_detection_settings)
 
-        setSupportActionBar(binding.toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        // Toolbar
+        setSupportActionBar(findViewById(R.id.toolbar))
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
 
-        setupSwitches()
-        
-        binding.btnResetToDefault.setOnClickListener {
-            resetToDefault()
+        // ====== Section 1: Location ======
+        val switchAccuracy = findViewById<MaterialSwitch>(R.id.switchAccuracySpoof)
+        switchAccuracy.isChecked = PrefManager.isAccuracySpoofEnabled
+        switchAccuracy.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isAccuracySpoofEnabled = isChecked
+        }
+
+        val switchGeocoder = findViewById<MaterialSwitch>(R.id.switchGeocoderSpoof)
+        switchGeocoder.isChecked = PrefManager.isGeocoderSpoofEnabled
+        switchGeocoder.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isGeocoderSpoofEnabled = isChecked
+        }
+
+        // ====== Section 2: Sensor ======
+        val switchSensor = findViewById<MaterialSwitch>(R.id.switchSensorSpoof)
+        switchSensor.isChecked = PrefManager.isSensorSpoofEnabled
+        switchSensor.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isSensorSpoofEnabled = isChecked
+        }
+
+        // ====== Section 3: Network & Connectivity ======
+        val switchNetwork = findViewById<MaterialSwitch>(R.id.switchNetworkSimulation)
+        switchNetwork.isChecked = PrefManager.isNetworkSimEnabled
+        switchNetwork.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isNetworkSimEnabled = isChecked
+        }
+
+        val switchBluetooth = findViewById<MaterialSwitch>(R.id.switchBluetoothSpoof)
+        switchBluetooth.isChecked = PrefManager.isBluetoothSpoofEnabled
+        switchBluetooth.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isBluetoothSpoofEnabled = isChecked
+        }
+
+        val switchCell = findViewById<MaterialSwitch>(R.id.switchCellSpoof)
+        switchCell.isChecked = PrefManager.isCellSpoofEnabled
+        switchCell.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isCellSpoofEnabled = isChecked
+        }
+
+        // ====== Section 4: System Settings Simulation ======
+        val switchWifiScan = findViewById<MaterialSwitch>(R.id.switchWifiScanSpoof)
+        switchWifiScan.isChecked = PrefManager.isWifiScanSpoofEnabled
+        switchWifiScan.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isWifiScanSpoofEnabled = isChecked
+        }
+
+        val switchBtScan = findViewById<MaterialSwitch>(R.id.switchBtScanSpoof)
+        switchBtScan.isChecked = PrefManager.isBtScanSpoofEnabled
+        switchBtScan.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isBtScanSpoofEnabled = isChecked
+        }
+
+        // ====== Section 5: Monitoring ======
+        val switchMonitor = findViewById<MaterialSwitch>(R.id.switchLocationMonitor)
+        switchMonitor.isChecked = PrefManager.isLocationMonitorEnabled
+        switchMonitor.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isLocationMonitorEnabled = isChecked
+            if (isChecked) {
+                startLocationMonitorService()
+            } else {
+                stopLocationMonitorService()
+            }
+        }
+
+        // ====== Reset Button ======
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btnResetToDefault)
+            .setOnClickListener {
+                resetToDefaults()
+            }
+    }
+
+    private fun startLocationMonitorService() {
+        val intent = Intent(this, LocationAccessMonitorService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
         }
     }
 
-    private fun setupSwitches() {
-        binding.apply {
-            switchAccuracySpoof.isChecked = PrefManager.isAccuracySpoofEnabled
-            switchAccuracySpoof.setOnCheckedChangeListener { _, isChecked ->
-                PrefManager.isAccuracySpoofEnabled = isChecked
-            }
-
-            switchSensorSpoof.isChecked = PrefManager.isSensorSpoofEnabled
-            switchSensorSpoof.setOnCheckedChangeListener { _, isChecked ->
-                PrefManager.isSensorSpoofEnabled = isChecked
-            }
-
-            switchNetworkSimulation.isChecked = PrefManager.isNetworkSimEnabled
-            switchNetworkSimulation.setOnCheckedChangeListener { _, isChecked ->
-                PrefManager.isNetworkSimEnabled = isChecked
-            }
-        }
+    private fun stopLocationMonitorService() {
+        val intent = Intent(this, LocationAccessMonitorService::class.java)
+        stopService(intent)
     }
 
-    private fun resetToDefault() {
+    private fun resetToDefaults() {
         PrefManager.isAccuracySpoofEnabled = true
         PrefManager.isSensorSpoofEnabled = true
         PrefManager.isNetworkSimEnabled = true
-        setupSwitches()
-    }
+        PrefManager.isBluetoothSpoofEnabled = true
+        PrefManager.isCellSpoofEnabled = true
+        PrefManager.isGeocoderSpoofEnabled = true
+        PrefManager.isWifiScanSpoofEnabled = true
+        PrefManager.isBtScanSpoofEnabled = true
+        PrefManager.isLocationMonitorEnabled = false
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            finish()
-            return true
-        }
-        return super.onOptionsItemSelected(item)
+        stopLocationMonitorService()
+
+        // Refresh all switches
+        findViewById<MaterialSwitch>(R.id.switchAccuracySpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchGeocoderSpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchSensorSpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchNetworkSimulation).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchBluetoothSpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchCellSpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchWifiScanSpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchBtScanSpoof).isChecked = true
+        findViewById<MaterialSwitch>(R.id.switchLocationMonitor).isChecked = false
     }
 }
