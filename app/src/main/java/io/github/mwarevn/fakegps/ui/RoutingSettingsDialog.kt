@@ -4,7 +4,6 @@ import android.app.AlertDialog
 import android.content.Context
 import android.view.LayoutInflater
 import android.widget.ArrayAdapter
-import android.widget.EditText
 import android.widget.Spinner
 import io.github.mwarevn.fakegps.R
 import io.github.mwarevn.fakegps.network.VehicleType
@@ -12,7 +11,6 @@ import io.github.mwarevn.fakegps.utils.PrefManager
 
 /**
  * Dialog to configure routing settings:
- * - MapBox API key (optional, for better routing)
  * - Vehicle type selection
  */
 object RoutingSettingsDialog {
@@ -22,11 +20,7 @@ object RoutingSettingsDialog {
             R.layout.dialog_routing_settings, null
         )
         
-        val apiKeyInput = dialogView.findViewById<EditText>(R.id.api_key_input)
         val vehicleTypeSpinner = dialogView.findViewById<Spinner>(R.id.vehicle_type_spinner)
-        
-        // Load current values
-        apiKeyInput.setText(PrefManager.mapBoxApiKey ?: "")
         
         // Setup vehicle type spinner
         val vehicleTypes = VehicleType.entries.toTypedArray()
@@ -43,12 +37,8 @@ object RoutingSettingsDialog {
             .setTitle("Cài đặt tìm đường")
             .setView(dialogView)
             .setPositiveButton("Lưu") { _, _ ->
-                val apiKey = apiKeyInput.text.toString().trim()
-                PrefManager.mapBoxApiKey = if (apiKey.isEmpty()) null else apiKey
-                
                 val selectedType = vehicleTypes[vehicleTypeSpinner.selectedItemPosition]
                 PrefManager.vehicleType = selectedType.name
-                
                 onSaved()
             }
             .setNegativeButton("Hủy", null)

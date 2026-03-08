@@ -3,6 +3,14 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/show_fake_icon"
+        android:title="Hiện icon giả lập"
+        app:showAsAction="never"
+        android:checkable="true"
+        app:actionViewClass="androidx.appcompat.widget.SwitchCompat"
+        android:icon="@drawable/ic_fake_location"/>
+
+    <item
         android:id="@+id/routing_settings"
         android:title="Cài đặt tìm đường"
         app:showAsAction="never"

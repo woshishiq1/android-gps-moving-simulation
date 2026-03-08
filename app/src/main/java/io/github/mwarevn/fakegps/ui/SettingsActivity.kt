@@ -43,16 +43,17 @@ class ActivitySettings : AppCompatActivity() {
                 "system_hooked" -> PrefManager.isSystemHooked
                 "random_position" -> PrefManager.isRandomPosition
                 "joystick_enabled" -> PrefManager.isJoystickEnabled
-                else -> throw IllegalArgumentException("Invalid key $key")
+                "disable_update" -> PrefManager.isUpdateDisabled
+                else -> defValue
             }
         }
 
         override fun putBoolean(key: String?, value: Boolean) {
-            return when (key) {
+            when (key) {
                 "system_hooked" -> PrefManager.isSystemHooked = value
                 "random_position" -> PrefManager.isRandomPosition = value
                 "joystick_enabled" -> PrefManager.isJoystickEnabled = value
-                else -> throw IllegalArgumentException("Invalid key $key")
+                "disable_update" -> PrefManager.isUpdateDisabled = value
             }
         }
 
@@ -61,16 +62,15 @@ class ActivitySettings : AppCompatActivity() {
                 "accuracy_level" -> PrefManager.accuracy
                 "map_type" -> PrefManager.mapType.toString()
                 "dark_theme" -> PrefManager.darkTheme.toString()
-                else -> throw IllegalArgumentException("Invalid key $key")
+                else -> defValue
             }
         }
 
         override fun putString(key: String?, value: String?) {
-            return when (key) {
+            when (key) {
                 "accuracy_level" -> PrefManager.accuracy = value
-                "map_type" -> PrefManager.mapType = value!!.toInt()
-                "dark_theme" -> PrefManager.darkTheme = value!!.toInt()
-                else -> throw IllegalArgumentException("Invalid key $key")
+                "map_type" -> PrefManager.mapType = value?.toIntOrNull() ?: 1
+                "dark_theme" -> PrefManager.darkTheme = value?.toIntOrNull() ?: AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             }
         }
     }

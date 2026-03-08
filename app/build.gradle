@@ -19,6 +19,13 @@ android {
         versionName tagName
         // testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "TAG_NAME", "\"${tagName}\"")
+
+        def localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            def localProperties = new Properties()
+            localProperties.load(new FileInputStream(localPropertiesFile))
+            resValue "string", "mapbox_access_token", localProperties['MAPBOX_ACCESS_TOKEN'] ?: ""
+        }
     }
     splits {
         abi {
@@ -68,7 +75,7 @@ android {
         viewBinding true
         buildConfig true
 
-        compose = true
+        compose = false
     }
 
     namespace 'io.github.mwarevn.fakegps'
@@ -81,9 +88,11 @@ dependencies {
 
 //    compileOnly 'com.github.deltazefiro:XposedBridge:main-SNAPSHOT'
 
-    implementation 'com.mapbox.extension:maps-compose-ndk27:11.19.0'
+//    implementation 'com.mapbox.extension:maps-compose-ndk27:11.19.0'
 
     implementation 'com.mapbox.maps:android-ndk27:11.19.0'
+//    implementation 'com.mapbox.search:mapbox-search-android-core:2.5.1'
+//    implementation 'com.mapbox.search:mapbox-search-android:2.5.1'
 
     compileOnly files("libs/api-hookbridge.jar")
     implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:4.3'
@@ -116,5 +125,4 @@ dependencies {
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
 
-    implementation 'com.github.lukkass222:virtual-joystick-android:1.13.5'
 }

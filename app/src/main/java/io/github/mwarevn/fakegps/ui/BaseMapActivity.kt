@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import android.provider.Settings
+import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
@@ -162,14 +163,19 @@ abstract class BaseMapActivity: AppCompatActivity() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun setupNavView() {
-        binding.mapContainer.map.setOnApplyWindowInsetsListener { _, insets ->
-            val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        binding.container.setOnApplyWindowInsetsListener { _, insets ->
+            val systemInsets = WindowInsetsCompat.toWindowInsetsCompat(insets).getInsets(WindowInsetsCompat.Type.systemBars())
             binding.navView.setPadding(0, systemInsets.top, 0, 0)
             insets
         }
 
         binding.navView.setNavigationItemSelectedListener {
             when(it.itemId){
+                R.id.show_fake_icon -> {
+                    val switch = it.actionView as? androidx.appcompat.widget.SwitchCompat
+                    switch?.isChecked = !(switch?.isChecked ?: PrefManager.isShowFakeIcon)
+                    return@setNavigationItemSelectedListener true
+                }
                 R.id.routing_settings -> RoutingSettingsDialog.show(this)
                 R.id.get_favorite -> openFavoriteListDialog()
                 R.id.settings -> startActivity(Intent(this,ActivitySettings::class.java))
@@ -178,7 +184,18 @@ abstract class BaseMapActivity: AppCompatActivity() {
             binding.container.closeDrawer(GravityCompat.START)
             true
         }
+        
+        // Initialize Toggle State
+        val showFakeIconItem = binding.navView.menu.findItem(R.id.show_fake_icon)
+        val showFakeIconSwitch = showFakeIconItem.actionView as? androidx.appcompat.widget.SwitchCompat
+        showFakeIconSwitch?.isChecked = PrefManager.isShowFakeIcon
+        showFakeIconSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.isShowFakeIcon = isChecked
+            onShowFakeIconToggled(isChecked)
+        }
     }
+
+    protected open fun onShowFakeIconToggled(show: Boolean) {}
 
     private fun checkModuleEnabled(){
         viewModel.isXposed.observe(this) { isXposed ->

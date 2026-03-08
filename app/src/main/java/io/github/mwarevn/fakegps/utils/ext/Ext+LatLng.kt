@@ -2,31 +2,38 @@ package io.github.mwarevn.fakegps.utils.ext
 
 import android.content.Context
 import android.location.Geocoder
-import com.google.android.gms.maps.model.LatLng
+import io.github.mwarevn.fakegps.utils.LatLng
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.*
 
 suspend fun LatLng.getAddress(context: Context) = callbackFlow {
-    withContext(Dispatchers.IO){
-        val addresses =
-            Geocoder(context, Locale.getDefault()).getFromLocation(latitude, longitude, 1)
+    val geocoder = Geocoder(context, Locale.getDefault())
+    try {
+        val addresses = geocoder.getFromLocation(latitude, longitude, 1)
         val sb = StringBuilder()
-        if (addresses!!.size > 0) {
-            val address = addresses[0].getAddressLine(0)
-            val strs = address.split(",".toRegex()).toTypedArray()
+        if (!addresses.isNullOrEmpty()) {
+            val address = addresses[0]
+            val addressStr = address.getAddressLine(0)
+            
+            // Format Address like existing behavior
+            val strs = addressStr.split(",".toRegex()).toTypedArray()
             if (strs.size > 1) {
                 sb.append(strs[0])
-                val index = address.indexOf(",") + 2
-                if (index > 1 && address.length > index) {
-                    sb.append("\n").append(address.substring(index))
+                val index = addressStr.indexOf(",") + 2
+                if (index > 1 && addressStr.length > index) {
+                    sb.append("\n").append(addressStr.substring(index))
                 }
             } else {
-                sb.append(address)
+                sb.append(addressStr)
             }
+        } else {
+            sb.append("Tọa độ: $latitude, $longitude")
         }
         trySend(sb.toString())
+    } catch (e: Exception) {
+        trySend("Tọa độ: $latitude, $longitude") // fallback
     }
-    awaitClose { this.cancel() }
+    awaitClose { }
 }

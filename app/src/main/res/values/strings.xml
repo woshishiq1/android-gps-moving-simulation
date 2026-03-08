@@ -1,6 +1,7 @@
 <resources>
 
     <!-- Home -->
+
     <string name="app_name">Fake GPS: Fake GPS Navigation &amp; Joystick</string>
     <string name="xposed_desc">A moving GPS simulator based on the Xposed framework.</string>
     <string name="search">Search</string>

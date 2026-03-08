@@ -27,10 +27,10 @@ object PrefManager {
     private const val MAP_TYPE = "map_type"
     private const val DARK_THEME = "dark_theme"
     private const val ENABLE_JOYSTICK = "joystick_enabled"
-    private const val MAPBOX_API_KEY = "mapbox_api_key"
     private const val VEHICLE_TYPE = "vehicle_type"
     private const val AUTO_CURVE_SPEED = "auto_curve_speed"
     private const val NAV_CONTROLS_EXPANDED = "nav_controls_expanded"
+    private const val SHOW_FAKE_ICON = "show_fake_icon"
     
     // Anti-Detection Keys
     private const val SENSOR_SPOOF = "sensor_spoof"
@@ -154,6 +154,20 @@ object PrefManager {
         get() = pref.getInt(MAP_TYPE, 1)
         set(value) { pref.edit().putInt(MAP_TYPE, value).commit() }
 
+    fun getMapStyleUri(): String {
+        return when (mapType) {
+            1 -> "mapbox://styles/mapbox/streets-v12"
+            2 -> "mapbox://styles/mapbox/outdoors-v12"
+            3 -> "mapbox://styles/mapbox/light-v11"
+            4 -> "mapbox://styles/mapbox/dark-v11"
+            5 -> "mapbox://styles/mapbox/satellite-v9"
+            6 -> "mapbox://styles/mapbox/satellite-streets-v12"
+            7 -> "mapbox://styles/mapbox/navigation-day-v1"
+            8 -> "mapbox://styles/mapbox/navigation-night-v1"
+            else -> "mapbox://styles/mapbox/streets-v12"
+        }
+    }
+
     var darkTheme: Int
         get() = pref.getInt(DARK_THEME, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         set(value) { pref.edit().putInt(DARK_THEME, value).commit() }
@@ -161,10 +175,6 @@ object PrefManager {
     var isJoystickEnabled: Boolean
         get() = pref.getBoolean(ENABLE_JOYSTICK, false)
         set(value) { pref.edit().putBoolean(ENABLE_JOYSTICK, value).commit(); fixPermissions() }
-
-    var mapBoxApiKey: String?
-        get() = pref.getString(MAPBOX_API_KEY, null)
-        set(value) { pref.edit().putString(MAPBOX_API_KEY, value).commit() }
 
     var vehicleType: String
         get() = pref.getString(VEHICLE_TYPE, "MOTORBIKE") ?: "MOTORBIKE"
@@ -177,6 +187,10 @@ object PrefManager {
     var navControlsExpanded: Boolean
         get() = pref.getBoolean(NAV_CONTROLS_EXPANDED, true)
         set(value) { pref.edit().putBoolean(NAV_CONTROLS_EXPANDED, value).commit() }
+
+    var isShowFakeIcon: Boolean
+        get() = pref.getBoolean(SHOW_FAKE_ICON, true)
+        set(value) { pref.edit().putBoolean(SHOW_FAKE_ICON, value).commit() }
 
     fun update(start: Boolean, la: Double, ln: Double, bearing: Float = 0F, speed: Float = 0F) {
         pref.edit().apply {

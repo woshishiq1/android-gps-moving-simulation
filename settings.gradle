@@ -6,16 +6,24 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
+    def localProperties = new Properties()
+    def localPropertiesFile = new File(settingsDir, "local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(new FileInputStream(localPropertiesFile))
+    }
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
-        mavenCentral()
-        // maven { url "https://api.xposed.info/" }
-//        maven { url 'https://jitpack.io' }
         maven {
             url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
+            credentials {
+                username = "mapbox"
+                password = localProperties.getProperty("MAPBOX_DOWNLOADS_TOKEN") ?: ""
+            }
+            authentication { basic(BasicAuthentication) }
         }
+        google()
+        mavenCentral()
     }
 }
-rootProject.name = "GPS Setter"
+rootProject.name = "mwarevn"
 include ':app'

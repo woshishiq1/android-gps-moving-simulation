@@ -1,6 +1,6 @@
 package io.github.mwarevn.fakegps.utils
 
-import com.google.android.gms.maps.model.LatLng
+import io.github.mwarevn.fakegps.utils.LatLng
 import kotlinx.coroutines.*
 
 class RouteSimulator(

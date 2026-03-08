@@ -65,9 +65,6 @@
             android:foregroundServiceType="location" />
 
 
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyDJHl2fdyya0PuEY-LRFUZM71pijfZN6IE" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

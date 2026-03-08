@@ -11,7 +11,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.google.android.gms.maps.model.LatLng
+import io.github.mwarevn.fakegps.utils.LatLng
 import io.github.mwarevn.fakegps.R
 import io.github.mwarevn.fakegps.ui.MapActivity
 import kotlinx.coroutines.*
