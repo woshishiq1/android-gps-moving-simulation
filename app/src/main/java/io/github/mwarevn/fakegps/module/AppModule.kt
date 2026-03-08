@@ -9,6 +9,12 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.mwarevn.fakegps.module.util.ApplicationScope
+import io.github.mwarevn.fakegps.data.repository.FavoriteRepositoryImpl
+import io.github.mwarevn.fakegps.data.routing.OsrmRoutingProvider
+import io.github.mwarevn.fakegps.domain.repository.IFavoriteRepository
+import io.github.mwarevn.fakegps.domain.routing.IRoutingProvider
+import io.github.mwarevn.fakegps.network.OsrmClient
+import io.github.mwarevn.fakegps.network.RoutingService
 import io.github.mwarevn.fakegps.network.StatusService
 import io.github.mwarevn.fakegps.room.AppDatabase
 import io.github.mwarevn.fakegps.room.FavoriteDao
@@ -48,6 +54,15 @@ object AppModule {
 
     @Singleton
     @Provides
+    fun provideRoutingService(): RoutingService = OsrmClient.createRoutingService("invalid_token_not_needed_for_osrm")
+
+    @Singleton
+    @Provides
+    fun provideRoutingProvider(routingService: RoutingService): IRoutingProvider =
+        OsrmRoutingProvider(routingService)
+
+    @Singleton
+    @Provides
     fun provideDownloadManger(application: Application) =
         application.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
@@ -64,6 +79,11 @@ object AppModule {
     @Provides
     fun providesUserDao(favoriteDatabase: AppDatabase): FavoriteDao =
         favoriteDatabase.favoriteDao()
+
+    @Singleton
+    @Provides
+    fun provideFavoriteRepository(favoriteDao: FavoriteDao): IFavoriteRepository =
+        FavoriteRepositoryImpl(favoriteDao)
 
     @Singleton
     @Provides

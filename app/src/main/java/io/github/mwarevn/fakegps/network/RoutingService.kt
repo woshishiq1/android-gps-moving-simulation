@@ -1,7 +1,7 @@
 package io.github.mwarevn.fakegps.network
 
 import android.util.Log
-import io.github.mwarevn.fakegps.utils.LatLng
+import io.github.mwarevn.fakegps.domain.model.LatLng
 import kotlinx.coroutines.withTimeout
 import java.io.IOException
 

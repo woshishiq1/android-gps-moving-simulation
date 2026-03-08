@@ -83,16 +83,9 @@ android {
 
 dependencies {
 
-    // temporary foss xposed fix from https://github.com/deltazefiro/Amarok-Hider/issues/160
-    // compileOnly 'de.robv.android.xposed:api:82'
-
 //    compileOnly 'com.github.deltazefiro:XposedBridge:main-SNAPSHOT'
 
-//    implementation 'com.mapbox.extension:maps-compose-ndk27:11.19.0'
-
     implementation 'com.mapbox.maps:android-ndk27:11.19.0'
-//    implementation 'com.mapbox.search:mapbox-search-android-core:2.5.1'
-//    implementation 'com.mapbox.search:mapbox-search-android:2.5.1'
 
     compileOnly files("libs/api-hookbridge.jar")
     implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:4.3'

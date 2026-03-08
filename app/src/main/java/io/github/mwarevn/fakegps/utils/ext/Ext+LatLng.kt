@@ -2,7 +2,7 @@ package io.github.mwarevn.fakegps.utils.ext
 
 import android.content.Context
 import android.location.Geocoder
-import io.github.mwarevn.fakegps.utils.LatLng
+import io.github.mwarevn.fakegps.domain.model.LatLng
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow

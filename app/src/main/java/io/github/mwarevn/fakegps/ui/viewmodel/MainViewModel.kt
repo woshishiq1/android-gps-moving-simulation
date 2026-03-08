@@ -19,11 +19,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import io.github.mwarevn.fakegps.BuildConfig
 import io.github.mwarevn.fakegps.R
+import io.github.mwarevn.fakegps.domain.model.FavoriteLocation
+import io.github.mwarevn.fakegps.domain.model.LatLng
+import io.github.mwarevn.fakegps.domain.model.VehicleType
+import io.github.mwarevn.fakegps.domain.repository.IFavoriteRepository
+import io.github.mwarevn.fakegps.domain.routing.IRoutingProvider
+import io.github.mwarevn.fakegps.domain.usecase.CalculateRouteUseCase
 import io.github.mwarevn.fakegps.network.StatusService
-import io.github.mwarevn.fakegps.repository.FavoriteRepository
-import io.github.mwarevn.fakegps.room.Favorite
 import io.github.mwarevn.fakegps.update.UpdateChecker
 import io.github.mwarevn.fakegps.utils.PrefManager
 import io.github.mwarevn.fakegps.utils.ext.onIO
@@ -40,11 +46,12 @@ import kotlin.math.roundToInt
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val favoriteRepository: FavoriteRepository,
+    private val favoriteRepository: IFavoriteRepository,
     private val prefManger: PrefManager,
     private val checkUpdates: UpdateChecker,
     private val downloadManager: DownloadManager,
     private val statusService: StatusService,
+    private val calculateRouteUseCase: CalculateRouteUseCase,
     @ApplicationContext context: Context
 ) : ViewModel() {
 
@@ -55,11 +62,11 @@ class MainViewModel @Inject constructor(
     val mapType: Int get() = prefManger.mapType
 
 
-    private val _allFavList = MutableStateFlow<List<Favorite>>(emptyList())
-    val allFavList : StateFlow<List<Favorite>> =  _allFavList
+    private val _allFavList = MutableStateFlow<List<FavoriteLocation>>(emptyList())
+    val allFavList : StateFlow<List<FavoriteLocation>> =  _allFavList
     fun doGetUserDetails(){
         onIO {
-            favoriteRepository.getAllFavorites
+            favoriteRepository.getAllFavorites()
                 .catch { e ->
                     Timber.tag("Error in getting all save favorite").d(e.message.toString())
                 }
@@ -73,11 +80,32 @@ class MainViewModel @Inject constructor(
         prefManger.update(start, la, ln, bearing, speed)
     }
 
+    private val _currentRoute = MutableStateFlow<List<LatLng>>(emptyList())
+    val currentRoute: StateFlow<List<LatLng>> = _currentRoute.asStateFlow()
+
+    private val _routeError = MutableSharedFlow<String>()
+    val routeError = _routeError.asSharedFlow()
+
+    private var routingJob: Job? = null
+
+    fun calculateRoute(start: LatLng, dest: LatLng, vehicle: VehicleType) {
+        routingJob?.cancel()
+        routingJob = viewModelScope.launch {
+            calculateRouteUseCase(start, dest, vehicle)
+                .onSuccess { _currentRoute.emit(it) }
+                .onFailure { _routeError.emit(it.message ?: "Unknown error") }
+        }
+    }
+
+    fun clearRoute() {
+        viewModelScope.launch { _currentRoute.emit(emptyList()) }
+    }
+
     private val _response = MutableLiveData<Long>()
     val response: LiveData<Long> = _response
 
 
-    private fun insertNewFavorite(favorite: Favorite) = onIO {
+    private fun insertNewFavorite(favorite: FavoriteLocation) = onIO {
         _response.postValue(favoriteRepository.addNewFavorite(favorite))
 
     }
@@ -95,12 +123,8 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun deleteFavorite(favorite: Favorite) = onIO {
+    fun deleteFavorite(favorite: FavoriteLocation) = onIO {
         favoriteRepository.deleteFavorite(favorite)
-    }
-
-    private fun getFavoriteSingle(i : Int) : Favorite {
-        return favoriteRepository.getSingleFavorite(i.toLong())
     }
 
 
@@ -288,32 +312,6 @@ class MainViewModel @Inject constructor(
         lat: Double,
         lon: Double
     ) = onIO {
-
-            // CRITICAL FIX: Add max limit to prevent infinite loop
-            // Previous code could loop forever if database issues occur
-            val maxSlots = 1000 // Reasonable limit for favorite locations
-            var slot: Int = -1 // Initialize with default value
-            var i = 0
-            while (i < maxSlots) {
-                if(getFavoriteSingle(i) == null) {
-                    slot = i
-                    break
-                } else {
-                    i++
-                }
-            }
-
-            // Safety check: If we hit max slots or slot not found, log error and return
-            if (slot == -1 || i >= maxSlots) {
-                Timber.tag("MainViewModel").e("Max favorite slots ($maxSlots) reached or no slot found!")
-                return@onIO
-            }
-
-         insertNewFavorite(Favorite(id = slot.toLong(), address = address, lat = lat, lng = lon))
+        favoriteRepository.addNewFavorite(FavoriteLocation(0, address, lat, lon))
     }
-
-
-
-
-
 }

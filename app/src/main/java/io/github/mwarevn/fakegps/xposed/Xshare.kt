@@ -12,9 +12,8 @@ class Xshare {
     }
 
     fun reload() {
-        if (xPref.hasFileChanged()) {
-            xPref.reload()
-        }
+        // Luôn reload để đảm bảo đọc được dữ liệu mới nhất từ file (cross-process)
+        xPref.reload()
     }
 
     val isStarted: Boolean

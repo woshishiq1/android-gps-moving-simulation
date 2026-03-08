@@ -1,6 +1,6 @@
 package io.github.mwarevn.fakegps.utils
 
-import io.github.mwarevn.fakegps.utils.LatLng
+import io.github.mwarevn.fakegps.domain.model.LatLng
 import kotlin.math.*
 
 object PolylineUtils {
