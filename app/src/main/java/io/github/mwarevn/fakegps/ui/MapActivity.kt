@@ -55,7 +55,6 @@ import io.github.mwarevn.fakegps.domain.route.RouteExtractorFactory
 /**
  * Clean redesigned MapActivity with Google Maps-like UX
  * Optimized to use LocationService for persistent background simulation
- * Enhanced to fully restore state including completed path and position updates.
  */
 class MapActivity : BaseMapActivity() {
 
@@ -67,56 +66,44 @@ class MapActivity : BaseMapActivity() {
         const val FAKE_LOCATION_STROKE_COLOR = 0xFFFF4500.toInt()
         const val FAKE_LOCATION_FILL_COLOR = 0x50FF4500.toInt()
         const val FAKE_LOCATION_CENTER_COLOR = 0xFFFF4500.toInt()
-        const val CIRCLE_RADIUS = 25.0
-        const val CIRCLE_STROKE_WIDTH = 4f
-        const val CIRCLE_Z_INDEX = 128f
-        const val CENTER_DOT_Z_INDEX = 129f
         private const val CAMERA_UPDATE_INTERVAL_MS = 1000L
     }
 
-    
-    // Markers & Controllers
     private lateinit var mapController: IMapController
     private var mapView: com.mapbox.maps.MapView? = null
     private lateinit var mapboxMap: com.mapbox.maps.MapboxMap
 
-    // Icons
+    private var currentMode = AppMode.SEARCH
+    private enum class AppMode { SEARCH, ROUTE_PLAN, NAVIGATION }
 
-    private var appMode: AppMode = AppMode.SEARCH
-    private var isNavigating = false
-    private var navJob: Job? = null
-    private var currentStartPos: LatLng? = null
-    private var currentDestPos: LatLng? = null
-    private var currentRoute: List<LatLng>? = null
-    private val completedPathPoints: MutableList<LatLng> = mutableListOf()
-    private var isGpsSet = false
     private var isDriving = false
     private var isPaused = false
-    private var currentSpeed = 52.0
+    private var isGpsSet = false 
+    
+    private var currentStartPos: LatLng? = null
+    private var currentDestPos: LatLng? = null
+    private var currentNavigationPosition: LatLng? = null
+    private var previousLocation: LatLng? = null // FIX: Re-added missing variable
     private var routingPoints: List<LatLng> = emptyList()
+    private val completedPathPoints: MutableList<LatLng> = mutableListOf()
+    
     private var currentFakeLocationPos: LatLng? = null
     private var lastJoystickLat = 0.0
     private var lastJoystickLon = 0.0
     private var lastCameraUpdateTime = 0L
     private var isCameraFollowing = true
-    private var previousLocation: LatLng? = null
-    private var currentNavigationPosition: LatLng? = null
+    private var currentSpeed = 52.0
     private var totalRouteDistanceKm = 0.0
     private var traveledDistanceKm = 0.0
     private var lastDistancePosition: LatLng? = null
-
-    private enum class AppMode { SEARCH, ROUTE_PLAN, NAVIGATION }
-    private var currentMode = AppMode.SEARCH
     private var hasSelectedStartPoint = false
 
     private var locationService: LocationService? = null
     private var isBound = false
     private var serviceStateJob: Job? = null
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) { if (pendingNavigationStart) { pendingNavigationStart = false; startNavigation() } }
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted && pendingNavigationStart) { pendingNavigationStart = false; startNavigation() }
     }
     private var pendingNavigationStart = false
 
@@ -125,20 +112,14 @@ class MapActivity : BaseMapActivity() {
             val binder = service as LocationService.LocationBinder
             locationService = binder.getService()
             isBound = true
-            
-            // CRITICAL: Re-register position update callback to make icon move again
             locationService?.updateCallbacks(
                 onPosition = { pos -> runOnUiThread { handleNavigationUpdate(pos) } },
                 onComplete = { runOnUiThread { onNavigationComplete() } }
             )
-            
             syncWithService()
             observeServiceState()
         }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            locationService = null; isBound = false; serviceStateJob?.cancel()
-        }
+        override fun onServiceDisconnected(name: ComponentName?) { locationService = null; isBound = false; serviceStateJob?.cancel() }
     }
 
     private fun observeServiceState() {
@@ -147,290 +128,113 @@ class MapActivity : BaseMapActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 val service = locationService ?: return@repeatOnLifecycle
                 launch { service.isPausedFlow.collect { paused -> isPaused = paused; updateNavControlButtons() } }
-                launch { service.isDrivingFlow.collect { driving -> if (isDriving && !driving) { onNavigationComplete() }; isDriving = driving } }
+                launch { service.isDrivingFlow.collect { driving -> if (isDriving && !driving) { onNavigationComplete() }; isDriving = driving; updateMarkersDraggableState() } }
             }
         }
     }
 
-    private val routeCache = mutableMapOf<String, List<LatLng>>()
     private val prefChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "latitude" || key == "longitude") { if (!isDriving && isGpsSet) { syncJoystickPosition() } }
+        if (key == "latitude" || key == "longitude") { syncJoystickPosition() }
         if (key == "map_type") { mapboxMap.loadStyleUri(PrefManager.getMapStyleUri()) { restoreMarkersAndRoutes() } }
     }
 
-    private val routingService: RoutingService get() = OsrmClient.createRoutingService(getString(R.string.mapbox_access_token))
     private var currentVehicleType: VehicleType
         get() = VehicleType.fromString(PrefManager.vehicleType)
         set(value) { PrefManager.vehicleType = value.name }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        isGpsSet = viewModel.isStarted
         viewModel.doGetUserDetails(); observeFavorites(); observeRoute()
-        Intent(this, LocationService::class.java).also { intent ->
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        }
+        Intent(this, LocationService::class.java).also { bindService(it, serviceConnection, Context.BIND_AUTO_CREATE) }
         handleIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
-        handleIntent(intent)
+        setIntent(intent); handleIntent(intent)
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent == null) {
-            android.util.Log.d("MapActivity", "=== INTENT DEBUG === Intent is null")
-            return
-        }
-        
-        // === COMPREHENSIVE INTENT LOGGING ===
-        android.util.Log.d("MapActivity", "=== INTENT DEBUG START ===")
-        android.util.Log.d("MapActivity", "Action: ${intent.action}")
-        android.util.Log.d("MapActivity", "Data: ${intent.data}")
-        android.util.Log.d("MapActivity", "Data URI: ${intent.dataString}")
-        android.util.Log.d("MapActivity", "Type: ${intent.type}")
-        android.util.Log.d("MapActivity", "Package: ${intent.`package`}")
-        android.util.Log.d("MapActivity", "Component: ${intent.component}")
-        
-        // Log all categories
-        val categories = intent.categories
-        if (categories != null) {
-            android.util.Log.d("MapActivity", "Categories: $categories")
-        }
-        
-        // Log all extras
-        val extras = intent.extras
-        if (extras != null && !extras.isEmpty) {
-            android.util.Log.d("MapActivity", "Extras count: ${extras.size()}")
-            for (key in extras.keySet()) {
-                val value = extras.get(key)
-                android.util.Log.d("MapActivity", "  Extra[$key] = $value (type: ${value?.javaClass?.simpleName})")
-            }
-        } else {
-            android.util.Log.d("MapActivity", "No extras")
-        }
-        
-        // Log shared text specifically
-        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
-        if (sharedText != null) {
-            android.util.Log.d("MapActivity", "EXTRA_TEXT (shared text): $sharedText")
-        }
-        
-        // Log subject
-        val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
-        if (subject != null) {
-            android.util.Log.d("MapActivity", "EXTRA_SUBJECT: $subject")
-        }
-        
-        // Log email data
-        val emails = intent.getStringArrayExtra(Intent.EXTRA_EMAIL)
-        if (emails != null) {
-            android.util.Log.d("MapActivity", "EXTRA_EMAIL: ${emails.toList()}")
-        }
-        
-        android.util.Log.d("MapActivity", "=== INTENT DEBUG END ===")
-        
+        if (intent == null) return
         val action = intent.action
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
         val data: Uri? = intent.data
 
+        val isSupportedAction = (Intent.ACTION_SEND == action && sharedText != null) || (Intent.ACTION_VIEW == action && (data != null || sharedText != null))
+        if (isSupportedAction) {
+            android.util.Log.d("MapActivity", "New external intent: Clearing existing route/plan but keeping current Fake GPS state.")
+            clearActiveNavigationData()
+        }
+
         lifecycleScope.launch {
-            // Wait for map ready
             var attempts = 0
-            while (!::mapController.isInitialized && attempts < 20) {
-                delay(200)
-                attempts++
-            }
-            if (!::mapController.isInitialized) {
-                android.util.Log.e("MapActivity", "Map controller not initialized after 20 attempts")
-                return@launch
-            }
+            while (!::mapController.isInitialized && attempts < 20) { delay(200); attempts++ }
+            if (!::mapController.isInitialized) return@launch
 
             when {
-                Intent.ACTION_SEND == action && sharedText != null -> {
-                    android.util.Log.d("MapActivity", "▶ Processing ACTION_SEND with shared text: $sharedText")
-                    // Switch to IO context for URL resolution, then back to Main for UI updates
-                    withContext(Dispatchers.Default) {
-                        processSharedText(sharedText)
-                    }
-                }
-                Intent.ACTION_VIEW == action && data != null -> {
-                    android.util.Log.d("MapActivity", "▶ Processing ACTION_VIEW with URI: $data")
-                    processGeoUri(data)
-                }
-                Intent.ACTION_VIEW == action && data == null && sharedText != null -> {
-                    android.util.Log.d("MapActivity", "▶ Processing ACTION_VIEW (no data URI) with shared text: $sharedText")
-                    lifecycleScope.launch {
-                        processSharedText(sharedText)
-                    }
-                }
-                else -> {
-                    android.util.Log.d("MapActivity", "⚠ Unhandled intent action: $action, data: $data, sharedText: $sharedText")
-                }
+                Intent.ACTION_SEND == action && sharedText != null -> withContext(Dispatchers.Default) { processSharedText(sharedText) }
+                Intent.ACTION_VIEW == action && data != null -> processGeoUri(data)
+                Intent.ACTION_VIEW == action && data == null && sharedText != null -> processSharedText(sharedText)
             }
         }
     }
 
     private suspend fun processSharedText(text: String) {
-        android.util.Log.d("MapActivity", "▶▶ Processing shared text: Length=${text.length}, prefix=${text.take(100)}")
-        
-        // Extract URLs with better regex
-        val urlRegex = Regex("""https?://[^\s]+""")
-        val urlMatch = urlRegex.find(text)
-        
+        val urlRegex = Regex("""https?://[^\s]+"""); val urlMatch = urlRegex.find(text)
         if (urlMatch != null) {
-            val url = urlMatch.value.trim()
-            android.util.Log.d("MapActivity", "✓ Found URL: $url")
-            
-            // Use factory to find appropriate extractor
-            val factory = RouteExtractorFactory.getInstance()
-            val extractor = factory.getExtractor(url)
-            
+            val url = urlMatch.value.trim(); val extractor = RouteExtractorFactory.getInstance().getExtractor(url)
             if (extractor != null) {
                 try {
                     val routeData = extractor.extract(url)
                     if (routeData != null) {
-                        android.util.Log.d("MapActivity", "✓ Successfully extracted route from ${routeData.appName}")
                         runOnUiThread {
-                            // Set markers and plan route
-                            if (routeData.startPoint != null) {
-                                setStartMarker(routeData.startPoint)
-                            }
+                            if (routeData.startPoint != null) setStartMarker(routeData.startPoint, animateCamera = false)
                             setDestinationAndEnterRouteMode(routeData.endPoint)
                         }
                         return
-                    } else {
-                        android.util.Log.d("MapActivity", "⚠ Extractor could not parse the URL")
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("MapActivity", "✗ Error during extraction: ${e.message}", e)
-                }
-            } else {
-                android.util.Log.d("MapActivity", "⚠ No extractor found for URL")
+                } catch (e: Exception) { android.util.Log.e("MapActivity", "Extraction error", e) }
             }
-        } else {
-            android.util.Log.d("MapActivity", "⚠ No URL found in shared text")
         }
-        
-        // Fallback to text search
         val cleanQuery = text.replace(Regex("""https?://[^\s]+"""), "").replace("·", "").trim()
-        if (cleanQuery.isNotEmpty()) {
-            android.util.Log.d("MapActivity", "→ Fallback: Searching location by text query: '$cleanQuery'")
-            searchLocation(cleanQuery) { pos ->
-                android.util.Log.d("MapActivity", "✓ Text search found location: $pos")
-                setDestinationAndEnterRouteMode(pos)
-            }
-        } else {
-            android.util.Log.d("MapActivity", "⚠ No text query available for fallback")
-        }
+        if (cleanQuery.isNotEmpty()) searchLocation(cleanQuery) { setDestinationAndEnterRouteMode(it) }
     }
 
     private fun processGeoUri(uri: Uri) {
-        android.util.Log.d("MapActivity", "▶▶ Processing URI: $uri")
-        android.util.Log.d("MapActivity", "  Scheme: ${uri.scheme}")
-        android.util.Log.d("MapActivity", "  Host: ${uri.host}")
-        android.util.Log.d("MapActivity", "  Path: ${uri.path}")
-        android.util.Log.d("MapActivity", "  Query: ${uri.query}")
-        android.util.Log.d("MapActivity", "  Fragment: ${uri.fragment}")
-        android.util.Log.d("MapActivity", "  All query params:")
-        uri.queryParameterNames.forEach { param ->
-            android.util.Log.d("MapActivity", "    $param = ${uri.getQueryParameter(param)}")
-        }
-        
         when (uri.scheme) {
             "geo" -> {
-                android.util.Log.d("MapActivity", "→ Processing 'geo' scheme URI")
-                val ssp = uri.schemeSpecificPart
-                val coords = ssp.split("?")[0].split(",")
+                val coords = uri.schemeSpecificPart.split("?")[0].split(",")
                 if (coords.size >= 2) {
-                    val lat = coords[0].toDoubleOrNull()
-                    val lon = coords[1].toDoubleOrNull()
-                    if (lat != null && lon != null) {
-                        android.util.Log.d("MapActivity", "✓ Geo URI coords: $lat, $lon")
-                        setDestinationAndEnterRouteMode(LatLng(lat, lon))
-                        return
-                    }
+                    val lat = coords[0].toDoubleOrNull(); val lon = coords[1].toDoubleOrNull()
+                    if (lat != null && lon != null) { setDestinationAndEnterRouteMode(LatLng(lat, lon)); return }
                 }
-                // Fallback: try to extract query parameter
-                uri.getQueryParameter("q")?.let { q ->
-                    android.util.Log.d("MapActivity", "→ Geo URI query parameter: $q")
-                    lifecycleScope.launch { 
-                        searchLocation(q) { setDestinationAndEnterRouteMode(it) } 
-                    }
-                } ?: run {
-                    android.util.Log.d("MapActivity", "⚠ Could not extract coordinates from geo URI")
-                }
+                uri.getQueryParameter("q")?.let { q -> lifecycleScope.launch { searchLocation(q) { setDestinationAndEnterRouteMode(it) } } }
             }
             "google.navigation" -> {
-                android.util.Log.d("MapActivity", "→ Processing 'google.navigation' scheme URI")
-                val ssp = uri.schemeSpecificPart
-                // google.navigation:///?q=lat,lon or google.navigation:///?q=address&destination=lat,lon
                 uri.getQueryParameter("q")?.let { q ->
-                    android.util.Log.d("MapActivity", "→ google.navigation 'q' parameter: $q")
-                    // Try to extract coordinates from q parameter
                     val coordMatch = Regex("""([-\d.]+),([-\d.]+)""").find(q)
                     if (coordMatch != null) {
-                        val lat = coordMatch.groupValues[1].toDoubleOrNull()
-                        val lon = coordMatch.groupValues[2].toDoubleOrNull()
-                        if (lat != null && lon != null) {
-                            android.util.Log.d("MapActivity", "✓ Extracted coords from q: $lat, $lon")
-                            setDestinationAndEnterRouteMode(LatLng(lat, lon))
-                            return@let
-                        }
+                        val lat = coordMatch.groupValues[1].toDoubleOrNull(); val lon = coordMatch.groupValues[2].toDoubleOrNull()
+                        if (lat != null && lon != null) { setDestinationAndEnterRouteMode(LatLng(lat, lon)); return@let }
                     }
-                    // Otherwise search for location
-                    android.util.Log.d("MapActivity", "→ Searching location by text: $q")
-                    lifecycleScope.launch { 
-                        searchLocation(q) { setDestinationAndEnterRouteMode(it) } 
-                    }
-                } ?: run {
-                    // Try destination parameter
-                    uri.getQueryParameter("destination")?.let { dest ->
-                        android.util.Log.d("MapActivity", "→ google.navigation 'destination' parameter: $dest")
-                        lifecycleScope.launch { 
-                            searchLocation(dest) { setDestinationAndEnterRouteMode(it) } 
-                        }
-                    } ?: run {
-                        android.util.Log.d("MapActivity", "⚠ No q or destination parameter in google.navigation URI")
-                    }
-                }
-            }
-            else -> {
-                android.util.Log.d("MapActivity", "⚠ Unhandled URI scheme: '${uri.scheme}'")
+                    lifecycleScope.launch { searchLocation(q) { setDestinationAndEnterRouteMode(it) } }
+                } ?: uri.getQueryParameter("destination")?.let { dest -> lifecycleScope.launch { searchLocation(dest) { setDestinationAndEnterRouteMode(it) } } }
             }
         }
     }
 
     private fun setDestinationAndEnterRouteMode(pos: LatLng, autoStart: Boolean = true) {
         runOnUiThread {
-            setDestinationMarker(pos)
-            enterRoutePlanMode()
+            setDestinationMarker(pos); enterRoutePlanMode()
             if (autoStart) {
-                // Use current GPS position or fake location position
-                val currentPos = if (isGpsSet) {
-                    LatLng(PrefManager.getLat, PrefManager.getLng)
-                } else {
-                    // Try to use map's current camera position as fallback
-                    try {
-                        val center = mapboxMap.cameraState.center
-                        LatLng(center.latitude(), center.longitude())
-                    } catch (e: Exception) {
-                        android.util.Log.e("MapActivity", "Error getting map center", e)
-                        // Last resort: use a default location (Ha Noi, VN)
-                        LatLng(21.0285, 105.8542)
-                    }
-                }
-                android.util.Log.d("MapActivity", "Setting start marker: $currentPos")
+                val currentPos = if (isGpsSet) LatLng(PrefManager.getLat, PrefManager.getLng) else LatLng(lat, lon)
                 setStartMarkerWithSelection(currentPos)
             }
             updateUseCurrentLocationButtonVisibility()
-            
-            // Auto find address names for UI
             lifecycleScope.launch {
-                val start = currentStartPos
-                val dest = currentDestPos
-                if (start != null) start.getAddress(this@MapActivity).collect { binding.startSearch.setText(it) }
-                if (dest != null) dest.getAddress(this@MapActivity).collect { binding.destinationSearch.setText(it) }
+                currentStartPos?.let { it.getAddress(this@MapActivity).collect { binding.startSearch.setText(it) } }
+                currentDestPos?.let { it.getAddress(this@MapActivity).collect { binding.destinationSearch.setText(it) } }
             }
         }
     }
@@ -440,8 +244,7 @@ class MapActivity : BaseMapActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.currentRoute.collect { points ->
                     if (points.isNotEmpty()) {
-                        routingPoints = points
-                        mapController.drawRoute(points, ROUTE_COLOR, ROUTE_WIDTH)
+                        routingPoints = points; mapController.drawRoute(points, ROUTE_COLOR, ROUTE_WIDTH)
                         binding.routeLoadingCard.visibility = View.GONE
                         binding.actionButton.apply { text = "Bắt đầu"; setIconResource(R.drawable.ic_navigation); visibility = View.VISIBLE }
                         binding.cancelRouteButton.apply { text = "Huỷ"; visibility = View.VISIBLE }
@@ -449,78 +252,41 @@ class MapActivity : BaseMapActivity() {
                 }
             }
         }
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.routeError.collect { showRouteErrorUI() }
-            }
-        }
+        lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.routeError.collect { showRouteErrorUI() } } }
     }
 
     private fun observeFavorites() {
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.allFavList.collect { updateAddFavoriteButtonVisibility() }
-            }
-        }
+        lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.allFavList.collect { updateAddFavoriteButtonVisibility() } } }
     }
 
     override fun initializeMap() {
         val map = binding.root.findViewById<com.mapbox.maps.MapView>(R.id.mapView)
-        mapView = map
-        mapboxMap = map.mapboxMap
-        val annotationApi = map.annotations
-        val pointAnnotationManager = annotationApi.createPointAnnotationManager()
-        val polylineAnnotationManager = annotationApi.createPolylineAnnotationManager()
-        polylineAnnotationManager.lineCap = com.mapbox.maps.extension.style.layers.properties.generated.LineCap.ROUND
-        polylineAnnotationManager.lineJoin = com.mapbox.maps.extension.style.layers.properties.generated.LineJoin.ROUND
+        mapView = map; mapboxMap = map.mapboxMap
+        val polylineAnnotationManager = map.annotations.createPolylineAnnotationManager()
+        val pointAnnotationManager = map.annotations.createPointAnnotationManager()
+        polylineAnnotationManager.lineCap = LineCap.ROUND; polylineAnnotationManager.lineJoin = LineJoin.ROUND
         
-        // Initialize Bitmaps locally
-        val locationIcon = getBitmapFromDrawable(R.drawable.ic_fake_location)
-        val destinationIcon = getBitmapFromDrawable(R.drawable.ic_fake_gps_marker)
-        val startIcon = getBitmapFromDrawable(R.drawable.ic_location_on)
-        
-        // Initialize MapController
         mapController = io.github.mwarevn.fakegps.data.map.MapboxController(
             map, mapboxMap, pointAnnotationManager, polylineAnnotationManager,
-            io.github.mwarevn.fakegps.data.map.MapboxController.MapIcons(locationIcon, destinationIcon, startIcon)
+            io.github.mwarevn.fakegps.data.map.MapboxController.MapIcons(getBitmapFromDrawable(R.drawable.ic_fake_location), getBitmapFromDrawable(R.drawable.ic_fake_gps_marker), getBitmapFromDrawable(R.drawable.ic_location_on))
         )
-        
-        // Enable real location component
         map.location.enabled = true
-
-        // Configure Gestures
-        mapboxMap.addOnMapClickListener { point ->
-            onMapClick(LatLng(point.latitude(), point.longitude()))
-            true
-        }
-        
+        mapboxMap.addOnMapClickListener { point -> onMapClick(LatLng(point.latitude(), point.longitude())); true }
         pointAnnotationManager.addDragListener(io.github.mwarevn.fakegps.data.map.createDragListener(object : io.github.mwarevn.fakegps.domain.map.IMapController.OnPointAnnotationDragListenerWrapper {
             override fun onAnnotationDragFinished(id: String, point: com.mapbox.geojson.Point) {
-                if (currentMode == AppMode.NAVIGATION) return
-                
+                if (currentMode == AppMode.NAVIGATION || isDriving) { showToast("Không thể thay đổi lộ trình khi đang di chuyển"); return }
                 lifecycleScope.launch {
-                    val pos = LatLng(point.latitude(), point.longitude())
-                    val addr = getAddressFromLocation(pos)
-                    
+                    val pos = LatLng(point.latitude(), point.longitude()); val addr = getAddressFromLocation(pos)
                     if (id == mapController.getDestinationId()) {
-                        currentDestPos = pos
-                        binding.destinationSearch.setText(addr)
-                        updateReplaceLocationButtonVisibility()
-                        updateAddFavoriteButtonVisibility()
-                        updateActionButtonsVisibility()
+                        currentDestPos = pos; binding.destinationSearch.setText(addr)
+                        updateReplaceLocationButtonVisibility(); updateAddFavoriteButtonVisibility(); updateActionButtonsVisibility()
                     } else if (id == mapController.getStartId()) {
-                        currentStartPos = pos
-                        binding.startSearch.setText(addr)
-                        updateUseCurrentLocationButtonVisibility()
+                        currentStartPos = pos; binding.startSearch.setText(addr); updateUseCurrentLocationButtonVisibility()
                     }
-                    if (currentMode == AppMode.ROUTE_PLAN && mapController.hasStartMarker() && mapController.hasDestinationMarker()) {
-                        drawRoute()
-                    }
+                    if (currentMode == AppMode.ROUTE_PLAN && mapController.hasStartMarker() && mapController.hasDestinationMarker()) drawRoute()
                 }
             }
         }))
-
-        // Run map ready equivalent actions
         onMapReadyMapbox()
     }
 
@@ -529,81 +295,44 @@ class MapActivity : BaseMapActivity() {
 
     override fun moveMapToNewLocation(moveNewLocation: Boolean, shouldMark: Boolean) {
         if (moveNewLocation) {
-            val newPos = LatLng(lat, lon)
-            mapController.moveCamera(newPos, zoom = 16.0, animate = true)
-            if (shouldMark && currentMode == AppMode.SEARCH) { setDestinationMarker(newPos) }
+            val newPos = LatLng(lat, lon); mapController.moveCamera(newPos, zoom = 16.0, animate = true)
+            if (shouldMark && currentMode == AppMode.SEARCH) setDestinationMarker(newPos)
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun onMapReadyMapbox() {
         mapController.loadStyle(PrefManager.getMapStyleUri()) {
-            if (checkPermissions()) { 
-                getLastLocation() 
-            } else { 
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE) 
-            }
-            
-            mapController.addOnCameraChangeListener { bearing ->
-                PrefManager.cameraBearing = bearing.toFloat()
-            }
-            
-            setupButtons()
-            setupSearchBoxes()
-            restoreMarkersAndRoutes()
-            
+            if (checkPermissions()) getLastLocation() else ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+            mapController.addOnCameraChangeListener { bearing -> PrefManager.cameraBearing = bearing.toFloat() }
+            setupButtons(); setupSearchBoxes(); restoreMarkersAndRoutes()
             if (isBound) syncWithService()
         }
     }
 
     private fun restoreMarkersAndRoutes() {
         restoreFakeLocationMarker()
-        
-        // Restore destination and start markers if present
         currentDestPos?.let { setDestinationMarker(it, animateCamera = false) }
         currentStartPos?.let { setStartMarker(it, animateCamera = false) }
-        
-        // Restore route and navigation marker if driving
-        if (isDriving) {
-            drawRoute(showLoading = false)
-            currentNavigationPosition?.let { updateFakeLocationMarker(it) }
-        }
+        if (isDriving) { drawRoute(showLoading = false); currentNavigationPosition?.let { updateFakeLocationMarker(it) } }
     }
 
     private fun syncWithService() {
         val service = locationService ?: return
         if (service.isDrivingFlow.value) {
-            isDriving = true; currentMode = AppMode.NAVIGATION
-            routingPoints = service.currentRoutePoints
-            
-            // 1. Restore path and markers
+            isDriving = true; currentMode = AppMode.NAVIGATION; routingPoints = service.currentRoutePoints
             mapController.drawRoute(routingPoints, ROUTE_COLOR, ROUTE_WIDTH)
-
             if (routingPoints.isNotEmpty()) {
                 mapController.setStartMarker(routingPoints.first(), true)
-                val dPos = service.currentTargetLatLng ?: routingPoints.last()
-                mapController.setDestinationMarker(dPos, true)
+                mapController.setDestinationMarker(service.currentTargetLatLng ?: routingPoints.last(), true)
             }
-            
-            // 2. CRITICAL: Restore completed path (traveled route)
-            completedPathPoints.clear()
-            completedPathPoints.addAll(service.traveledPoints)
-            if (completedPathPoints.isNotEmpty()) {
-                // Keep completedPath drawing as is for now if not in MapController or move it too
-                // For simplicity, I'll move it to MapController later if needed
-                drawCompletedPathLocally()
-            }
-            
-            // 3. Switch UI mode
+            completedPathPoints.clear(); completedPathPoints.addAll(service.traveledPoints)
+            if (completedPathPoints.isNotEmpty()) drawCompletedPathLocally()
             binding.searchCard.visibility = View.GONE; binding.navigationControlsCard.visibility = View.VISIBLE; binding.cameraFollowToggle.visibility = View.VISIBLE
             updateNavigationAddresses(); updateNavControlButtons()
-            
-            // 4. Set current position
             service.lastPosition?.let { handleNavigationUpdate(it) }
-            
-            totalRouteDistanceKm = calculateTotalRouteDistance(routingPoints)
-            traveledDistanceKm = (completedPathPoints.size * 0.005) // Approximation or recalculate
-            updateDistanceLabel()
+            totalRouteDistanceKm = calculateTotalRouteDistance(routingPoints); traveledDistanceKm = (completedPathPoints.size * 0.005); updateDistanceLabel()
+            updateMarkersDraggableState()
         }
     }
 
@@ -612,10 +341,7 @@ class MapActivity : BaseMapActivity() {
         if (Math.abs(currentLat - lastJoystickLat) > 1e-7 || Math.abs(currentLon - lastJoystickLon) > 1e-7) {
             lastJoystickLat = currentLat; lastJoystickLon = currentLon
             val newPos = LatLng(currentLat, currentLon)
-            lifecycleScope.launch(Dispatchers.Main) {
-                // fakeLocationCircle?.center = newPos; fakeLocationCenterDot?.position = newPos
-                currentFakeLocationPos = newPos; updateActionButtonsVisibility()
-            }
+            lifecycleScope.launch(Dispatchers.Main) { currentFakeLocationPos = newPos; updateActionButtonsVisibility() }
         }
     }
 
@@ -648,13 +374,11 @@ class MapActivity : BaseMapActivity() {
             }
         }
         binding.getlocation.setOnClickListener { getLastLocation() }
-        binding.getFakeLocation.setOnClickListener { currentFakeLocationPos?.let { pos -> 
-            mapboxMap.easeTo(CameraOptions.Builder().center(Point.fromLngLat(pos.longitude, pos.latitude)).zoom(15.0).build()) 
-        } }
+        binding.getFakeLocation.setOnClickListener { currentFakeLocationPos?.let { pos -> mapboxMap.easeTo(CameraOptions.Builder().center(Point.fromLngLat(pos.longitude, pos.latitude)).zoom(15.0).build()) } }
         binding.setLocationButton.setOnClickListener {
             if (isGpsSet) {
-                isGpsSet = false; currentFakeLocationPos = null; viewModel.update(false, 0.0, 0.0)
-                stopService(Intent(this, LocationService::class.java))
+                isGpsSet = false; viewModel.update(false, 0.0, 0.0); stopService(Intent(this, LocationService::class.java))
+                mapController.updateFakeLocationMarker(LatLng(0.0, 0.0), false); currentFakeLocationPos = null
             } else {
                 val pos = mapController.getDestinationPosition() ?: mapboxMap.cameraState.center.let { LatLng(it.latitude(), it.longitude()) }
                 isGpsSet = true; currentFakeLocationPos = pos; viewModel.update(true, pos.latitude, pos.longitude)
@@ -665,29 +389,22 @@ class MapActivity : BaseMapActivity() {
         binding.replaceLocationButton.setOnClickListener {
             mapController.getDestinationPosition()?.let { pos ->
                 currentFakeLocationPos = pos; viewModel.update(true, pos.latitude, pos.longitude)
-                updateFakeLocationMarker(pos); updateReplaceLocationButtonVisibility()
-                updateActionButtonsVisibility(); showToast("Đã cập nhật vị trí Fake GPS")
+                updateFakeLocationMarker(pos); updateReplaceLocationButtonVisibility(); updateActionButtonsVisibility(); showToast("Đã cập nhật vị trí Fake GPS")
             }
         }
         binding.addFavoriteButton.setOnClickListener { mapController.getDestinationPosition()?.let { pos -> showAddFavoriteDialog(pos) } }
         binding.cameraFollowToggle.setOnClickListener { if (isDriving) { isCameraFollowing = !isCameraFollowing; updateCameraFollowButton() } }
-        binding.speedSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                currentSpeed = if (isDriving && value <= 0) 1.0 else value.toDouble()
-                updateSpeedLabel(currentSpeed); locationService?.setSpeed(currentSpeed)
-            }
-        }
+        binding.speedSlider.addOnChangeListener { _, value, fromUser -> if (fromUser) { currentSpeed = if (isDriving && value <= 0) 1.0 else value.toDouble(); updateSpeedLabel(currentSpeed); locationService?.setSpeed(currentSpeed) } }
         binding.autoCurveSpeedCheckbox.isChecked = PrefManager.autoCurveSpeed
         binding.autoCurveSpeedCheckbox.setOnCheckedChangeListener { _, isChecked -> PrefManager.autoCurveSpeed = isChecked }
-        binding.pauseButton.setOnClickListener { if (isDriving && !isPaused) { locationService?.pauseSimulation() } }
-        binding.resumeButton.setOnClickListener { if (isDriving && isPaused) { locationService?.resumeSimulation() } }
+        binding.pauseButton.setOnClickListener { if (isDriving && !isPaused) locationService?.pauseSimulation() }
+        binding.resumeButton.setOnClickListener { if (isDriving && isPaused) locationService?.resumeSimulation() }
         binding.stopButton.setOnClickListener { if (isDriving) onStopNavigationEarly() }
         binding.completedFinishButton.setOnClickListener { onFinishNavigation() }
         binding.completedRestartButton.setOnClickListener { onRestartNavigation() }
         binding.useCurrentLocationContainer.setOnClickListener { 
             val pos = if (isGpsSet) LatLng(PrefManager.getLat, PrefManager.getLng) else LatLng(lat, lon)
-            setStartMarkerWithSelection(pos)
-            if (currentMode == AppMode.SEARCH) enterRoutePlanMode()
+            setStartMarkerWithSelection(pos); if (currentMode == AppMode.SEARCH) enterRoutePlanMode()
             updateUseCurrentLocationButtonVisibility()
         }
         binding.routeRetryButton.setOnClickListener { drawRoute() }
@@ -699,52 +416,35 @@ class MapActivity : BaseMapActivity() {
     }
 
     private fun checkAndStartNavigation() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                pendingNavigationStart = true; requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS); return
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            pendingNavigationStart = true; requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS); return
         }
         startNavigation()
     }
 
     private fun checkAndStartForegroundService(action: String = LocationService.ACTION_START_FOREGROUND) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS); return
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS); return
         }
         Intent(this, LocationService::class.java).apply { this.action = action }.also { startService(it) }
     }
 
     private fun showAddFavoriteDialog(latLng: LatLng) {
         val view = layoutInflater.inflate(R.layout.dialog, null); val editText = view.findViewById<EditText>(R.id.search_edittxt)
-        lifecycleScope.launch { val address = getAddressFromLocation(latLng); editText.setText(address) }
+        lifecycleScope.launch { editText.setText(getAddressFromLocation(latLng)) }
         MaterialAlertDialogBuilder(this).setTitle("Thêm vào yêu thích").setView(view).setPositiveButton("Thêm") { _, _ ->
-            val name = editText.text.toString().trim()
-            if (name.isNotEmpty()) { viewModel.storeFavorite(name, latLng.latitude, latLng.longitude); showToast("Đã lưu vào yêu thích") }
+            val name = editText.text.toString().trim(); if (name.isNotEmpty()) { viewModel.storeFavorite(name, latLng.latitude, latLng.longitude); showToast("Đã lưu vào yêu thích") }
         }.setNegativeButton("Hủy", null).show()
     }
 
-    private fun updateNavControlButtons() {
-        binding.pauseButton.visibility = if (isPaused) View.GONE else View.VISIBLE
-        binding.resumeButton.visibility = if (isPaused) View.VISIBLE else View.GONE
-        binding.stopButton.visibility = if (isPaused) View.VISIBLE else View.GONE
-    }
+    private fun updateNavControlButtons() { binding.pauseButton.visibility = if (isPaused) View.GONE else View.VISIBLE; binding.resumeButton.visibility = if (isPaused) View.VISIBLE else View.GONE; binding.stopButton.visibility = if (isPaused) View.VISIBLE else View.GONE }
 
     private suspend fun searchLocation(query: String, onFound: (LatLng) -> Unit) = withContext(Dispatchers.IO) {
         try {
-            val geocoder = Geocoder(this@MapActivity, Locale.getDefault())
-            val addresses = geocoder.getFromLocationName(query, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val addr = addresses[0]
-                val pos = LatLng(addr.latitude, addr.longitude)
-                lifecycleScope.launch(Dispatchers.Main) { onFound(pos) }
-            } else {
-                lifecycleScope.launch(Dispatchers.Main) { showToast("Không tìm thấy địa điểm") }
-            }
-        } catch (e: Exception) {
-            lifecycleScope.launch(Dispatchers.Main) { showToast("Lỗi tìm kiếm: ${e.message}") }
-        }
+            val addresses = Geocoder(this@MapActivity, Locale.getDefault()).getFromLocationName(query, 1)
+            if (!addresses.isNullOrEmpty()) { val addr = addresses[0]; lifecycleScope.launch(Dispatchers.Main) { onFound(LatLng(addr.latitude, addr.longitude)) } }
+            else lifecycleScope.launch(Dispatchers.Main) { showToast("Không tìm thấy địa điểm") }
+        } catch (e: Exception) { lifecycleScope.launch(Dispatchers.Main) { showToast("Lỗi tìm kiếm: ${e.message}") } }
     }
 
     private suspend fun getAddressFromLocation(latLng: LatLng): String = withContext(Dispatchers.IO) {
@@ -753,8 +453,7 @@ class MapActivity : BaseMapActivity() {
             if (!addresses.isNullOrEmpty()) {
                 val addr = addresses[0]; val parts = mutableListOf<String>()
                 addr.featureName?.takeIf { it.isNotBlank() && !it.matches(Regex("^[\\d,\\.\\s]+$")) }?.let { parts.add(it) }
-                val street = "${addr.subThoroughfare ?: ""} ${addr.thoroughfare ?: ""}".trim()
-                if (street.isNotBlank()) parts.add(street)
+                val street = "${addr.subThoroughfare ?: ""} ${addr.thoroughfare ?: ""}".trim(); if (street.isNotBlank()) parts.add(street)
                 addr.subLocality?.let { parts.add(it) }; addr.locality?.let { parts.add(it) }; addr.adminArea?.let { parts.add(it) }
                 if (parts.isNotEmpty()) return@withContext parts.distinct().joinToString(", ")
             }
@@ -763,37 +462,20 @@ class MapActivity : BaseMapActivity() {
     }
 
     private fun setDestinationMarker(position: LatLng, animateCamera: Boolean = true) {
-        mapController.setDestinationMarker(position, true)
-        currentDestPos = position
-        
-        if (animateCamera) {
-            mapController.moveCamera(position, zoom = 16.0, animate = true)
-        }
-        lifecycleScope.launch { 
-            position.getAddress(this@MapActivity).collect { binding.destinationSearch.setText(it) }
-        }
-        if (currentMode == AppMode.SEARCH) { updateActionButtonsVisibility() }
+        mapController.setDestinationMarker(position, true); currentDestPos = position
+        if (animateCamera) mapController.moveCamera(position, zoom = 16.0, animate = true)
+        lifecycleScope.launch { position.getAddress(this@MapActivity).collect { binding.destinationSearch.setText(it) } }
+        if (currentMode == AppMode.SEARCH) updateActionButtonsVisibility()
         mapController.clearRoute(); updateSwapButtonVisibility(); updateReplaceLocationButtonVisibility(); updateUseCurrentLocationButtonVisibility()
     }
 
     private fun updateActionButtonsVisibility() {
         if (currentMode != AppMode.SEARCH) return
-        val markerPos = mapController.getDestinationPosition()
-        val currentFakePos = if (isGpsSet) LatLng(PrefManager.getLat, PrefManager.getLng) else currentFakeLocationPos
+        val markerPos = mapController.getDestinationPosition(); val currentFakePos = if (isGpsSet) LatLng(PrefManager.getLat, PrefManager.getLng) else currentFakeLocationPos
         val isAtFakeLocation = isGpsSet && markerPos != null && currentFakePos != null && Math.abs(markerPos.latitude - currentFakePos.latitude) < 1e-6 && Math.abs(markerPos.longitude - currentFakePos.longitude) < 1e-6
-        if (isAtFakeLocation) { 
-            binding.actionButton.visibility = View.GONE; binding.cancelRouteButton.visibility = View.GONE; 
-            mapController.clearDestinationMarker(); binding.destinationSearch.text.clear() 
-            updateUseCurrentLocationButtonVisibility()
-        } 
-        else if (markerPos == null) { 
-            binding.actionButton.visibility = View.GONE; binding.cancelRouteButton.visibility = View.GONE 
-            updateUseCurrentLocationButtonVisibility()
-        } 
-        else { 
-            binding.actionButton.apply { text = "Chỉ đường"; visibility = View.VISIBLE; setIconResource(R.drawable.ic_navigation) }; binding.cancelRouteButton.apply { text = "Huỷ"; visibility = View.VISIBLE } 
-            updateUseCurrentLocationButtonVisibility()
-        }
+        if (isAtFakeLocation) { binding.actionButton.visibility = View.GONE; binding.cancelRouteButton.visibility = View.GONE; mapController.clearDestinationMarker(); binding.destinationSearch.text.clear(); updateUseCurrentLocationButtonVisibility() } 
+        else if (markerPos == null) { binding.actionButton.visibility = View.GONE; binding.cancelRouteButton.visibility = View.GONE; updateUseCurrentLocationButtonVisibility() } 
+        else { binding.actionButton.apply { text = "Chỉ đường"; visibility = View.VISIBLE; setIconResource(R.drawable.ic_navigation) }; binding.cancelRouteButton.apply { text = "Huỷ"; visibility = View.VISIBLE }; updateUseCurrentLocationButtonVisibility() }
         updateAddFavoriteButtonVisibility()
     }
 
@@ -802,30 +484,23 @@ class MapActivity : BaseMapActivity() {
         if (currentMode == AppMode.SEARCH && dest != null) {
             val isFavorite = viewModel.allFavList.value.any { val results = FloatArray(1); android.location.Location.distanceBetween(it.lat ?: 0.0, it.lng ?: 0.0, dest.latitude, dest.longitude, results); results[0] < 15 }
             binding.addFavoriteButton.visibility = if (isFavorite) View.GONE else View.VISIBLE
-        } else { binding.addFavoriteButton.visibility = View.GONE }
+        } else binding.addFavoriteButton.visibility = View.GONE
     }
 
     private fun clearDestinationMarker() {
         mapController.clearDestinationMarker(); currentDestPos = null; binding.destinationSearch.text.clear()
         if (currentMode == AppMode.ROUTE_PLAN) cancelRoutePlan()
         binding.actionButton.visibility = View.GONE; binding.cancelRouteButton.visibility = View.GONE; binding.addFavoriteButton.visibility = View.GONE
-        updateSwapButtonVisibility(); updateReplaceLocationButtonVisibility()
-        updateUseCurrentLocationButtonVisibility()
+        updateSwapButtonVisibility(); updateReplaceLocationButtonVisibility(); updateUseCurrentLocationButtonVisibility()
     }
 
     private fun setStartMarker(position: LatLng, animateCamera: Boolean = true) {
-        mapController.setStartMarker(position, true)
-        currentStartPos = position
-
-        lifecycleScope.launch { 
-            position.getAddress(this@MapActivity).collect { binding.startSearch.setText(it) }
-        }
-        
+        mapController.setStartMarker(position, true); currentStartPos = position
+        lifecycleScope.launch { position.getAddress(this@MapActivity).collect { binding.startSearch.setText(it) } }
         if (animateCamera) {
             currentDestPos?.let { dPos ->
                 val pts = listOf(com.mapbox.geojson.Point.fromLngLat(position.longitude, position.latitude), com.mapbox.geojson.Point.fromLngLat(dPos.longitude, dPos.latitude))
-                val cameraOptions = mapboxMap.cameraForCoordinates(pts, com.mapbox.maps.EdgeInsets(150.0, 150.0, 150.0, 150.0))
-                mapboxMap.easeTo(cameraOptions)
+                mapboxMap.easeTo(mapboxMap.cameraForCoordinates(pts, com.mapbox.maps.EdgeInsets(150.0, 150.0, 150.0, 150.0)))
             }
         }
         drawRoute(showLoading = animateCamera)
@@ -838,85 +513,41 @@ class MapActivity : BaseMapActivity() {
     private fun enterRoutePlanMode() {
         currentMode = AppMode.ROUTE_PLAN; hasSelectedStartPoint = false
         binding.startSearchContainer.visibility = View.VISIBLE; binding.startSearch.requestFocus()
-        binding.cancelRouteButton.apply { text = "Huỷ"; visibility = View.VISIBLE }
-        binding.actionButton.visibility = View.GONE; binding.addFavoriteButton.visibility = View.GONE
+        binding.cancelRouteButton.apply { text = "Huỷ"; visibility = View.VISIBLE }; binding.actionButton.visibility = View.GONE; binding.addFavoriteButton.visibility = View.GONE
         updateMarkersDraggableState(); updateUseCurrentLocationButtonVisibility(); updateReplaceLocationButtonVisibility()
     }
 
     private fun updateUseCurrentLocationButtonVisibility() {
-        if (currentMode != AppMode.SEARCH && currentMode != AppMode.ROUTE_PLAN) {
-            binding.useCurrentLocationContainer.visibility = View.GONE
-            return
-        }
-
-        // SEARCH mode: Chỉ hiện nếu đã chọn Destination
-        if (currentMode == AppMode.SEARCH && !mapController.hasDestinationMarker()) {
-            binding.useCurrentLocationContainer.visibility = View.GONE
-            return
-        }
-
-        val currentPos = if (isGpsSet) LatLng(PrefManager.getLat, PrefManager.getLng) else LatLng(lat, lon)
-        val isFake = isGpsSet
-
-        if (currentMode == AppMode.SEARCH) {
-            binding.useCurrentLocationContainer.visibility = View.VISIBLE
-            val labelPrefix = if (isFake) "Bắt đầu đi tới từ điểm hiện tại (Giả lập)" else "Bắt đầu đi tới từ điểm hiện tại (Thực tế)"
-            binding.useCurrentLocationText.text = labelPrefix
-        } else {
-            // ROUTE_PLAN mode: Ẩn nếu Start marker đã ở vị trí hiện tại
-            val startLoc = mapController.getStartPosition()
-            val isSame = startLoc != null && Math.abs(startLoc.latitude - currentPos.latitude) < 1e-6 && Math.abs(startLoc.longitude - currentPos.longitude) < 1e-6
-
+        if (currentMode != AppMode.SEARCH && currentMode != AppMode.ROUTE_PLAN) { binding.useCurrentLocationContainer.visibility = View.GONE; return }
+        if (currentMode == AppMode.SEARCH && !mapController.hasDestinationMarker()) { binding.useCurrentLocationContainer.visibility = View.GONE; return }
+        val currentPos = if (isGpsSet) LatLng(PrefManager.getLat, PrefManager.getLng) else LatLng(lat, lon); val isFake = isGpsSet
+        if (currentMode == AppMode.SEARCH) { binding.useCurrentLocationContainer.visibility = View.VISIBLE; binding.useCurrentLocationText.text = if (isFake) "Bắt đầu đi tới từ điểm hiện tại (Giả lập)" else "Bắt đầu đi tới từ điểm hiện tại (Thực tế)" } 
+        else {
+            val startLoc = mapController.getStartPosition(); val isSame = startLoc != null && Math.abs(startLoc.latitude - currentPos.latitude) < 1e-6 && Math.abs(startLoc.longitude - currentPos.longitude) < 1e-6
             binding.useCurrentLocationContainer.visibility = if (!isSame) View.VISIBLE else View.GONE
-            if (!isSame) {
-                val label = if (isFake) "Dùng vị trí hiện tại (Giả lập)" else "Dùng vị trí hiện tại (Thực tế)"
-                binding.useCurrentLocationText.text = "$label (${String.format("%.4f", currentPos.latitude)}, ${String.format("%.4f", currentPos.longitude)})"
-            }
+            if (!isSame) binding.useCurrentLocationText.text = "${if (isFake) "Dùng vị trí hiện tại (Giả lập)" else "Dùng vị tại hiện tại (Thực tế)"} (${String.format("%.4f", currentPos.latitude)}, ${String.format("%.4f", currentPos.longitude)})"
         }
     }
 
-    private fun updateMarkersDraggableState() { 
-        mapController.setDestinationDraggable(currentMode != AppMode.NAVIGATION)
-        mapController.setStartDraggable(currentMode == AppMode.ROUTE_PLAN) 
-    }
+    private fun updateMarkersDraggableState() { val canDrag = currentMode != AppMode.NAVIGATION && !isDriving; mapController.setDestinationDraggable(canDrag); mapController.setStartDraggable(currentMode == AppMode.ROUTE_PLAN && canDrag) }
 
     private fun swapStartAndDestination() {
-        val sPos = currentStartPos ?: return
-        val dPos = currentDestPos ?: return
-        val sText = binding.startSearch.text.toString()
-        val dText = binding.destinationSearch.text.toString()
-        
-        currentStartPos = dPos
-        currentDestPos = sPos
-        
-        mapController.clearRoute()
-        mapController.setStartMarker(currentStartPos!!, false)
-        mapController.setDestinationMarker(currentDestPos!!, false)
-        
-        binding.startSearch.setText(dText); binding.destinationSearch.setText(sText)
-        if (currentMode == AppMode.ROUTE_PLAN) drawRoute()
+        val sPos = currentStartPos ?: return; val dPos = currentDestPos ?: return; val sText = binding.startSearch.text.toString(); val dText = binding.destinationSearch.text.toString()
+        currentStartPos = dPos; currentDestPos = sPos; mapController.clearRoute(); mapController.setStartMarker(currentStartPos!!, false); mapController.setDestinationMarker(currentDestPos!!, false)
+        binding.startSearch.setText(dText); binding.destinationSearch.setText(sText); if (currentMode == AppMode.ROUTE_PLAN) drawRoute()
     }
 
     private fun drawRoute(showLoading: Boolean = true) {
-        val start = currentStartPos ?: return
-        val dest = currentDestPos ?: return
-        
-        mapController.clearRoute()
-        binding.routeErrorCard.visibility = View.GONE
-        
-        if (showLoading) {
-            binding.actionButton.visibility = View.GONE; binding.routeLoadingCard.visibility = View.VISIBLE
-            binding.routeLoadingProgressText.text = "Đang tìm tuyến đường..."
-        }
-        
-        viewModel.calculateRoute(start, dest, currentVehicleType)
+        val start = currentStartPos ?: return; val dest = currentDestPos ?: return
+        mapController.clearRoute(); binding.routeErrorCard.visibility = View.GONE
+        if (showLoading) { binding.actionButton.visibility = View.GONE; binding.routeLoadingCard.visibility = View.VISIBLE; binding.routeLoadingProgressText.text = "Đang tìm tuyến đường..." }
+        lifecycleScope.launch { delay(100); viewModel.calculateRoute(start, dest, currentVehicleType) }
     }
 
     private fun showRouteErrorUI() { binding.routeLoadingCard.visibility = View.GONE; binding.routeErrorCard.visibility = View.VISIBLE; binding.actionButton.visibility = View.GONE; binding.cancelRouteButton.apply { text = "Huỷ"; visibility = View.VISIBLE } }
 
     private fun cancelRoutePlan() {
-        mapController.clearRoute()
-        mapController.clearStartMarker()
+        mapController.clearRoute(); mapController.clearStartMarker()
         binding.startSearch.text.clear(); binding.startSearchContainer.visibility = View.GONE; binding.useCurrentLocationContainer.visibility = View.GONE
         binding.routeLoadingCard.visibility = View.GONE; binding.routeErrorCard.visibility = View.GONE; currentMode = AppMode.SEARCH; hasSelectedStartPoint = false
         updateActionButtonsVisibility(); binding.searchCard.visibility = View.VISIBLE; updateSwapButtonVisibility()
@@ -924,185 +555,97 @@ class MapActivity : BaseMapActivity() {
 
     private fun startNavigation() {
         if (routingPoints.isEmpty()) return
-        isDriving = true; isPaused = false; currentMode = AppMode.NAVIGATION
-        completedPathPoints.clear(); completedPathPoints.add(routingPoints.first())
-        
-        // Remove fake location visual components
-        currentFakeLocationPos = null
-        
-        binding.actionButton.visibility = View.GONE; binding.navigationControlsCard.visibility = View.VISIBLE
-        binding.cancelRouteButton.visibility = View.GONE; binding.addFavoriteButton.visibility = View.GONE
-        binding.searchCard.visibility = View.GONE; binding.swapButtonContainer.visibility = View.GONE
-        binding.getFakeLocation.visibility = View.GONE; binding.setLocationButton.visibility = View.GONE; binding.replaceLocationButton.visibility = View.GONE
-        updateNavigationAddresses(); updateNavControlButtons(); isCameraFollowing = true
-        binding.cameraFollowToggle.visibility = View.VISIBLE; updateCameraFollowButton()
-        totalRouteDistanceKm = calculateTotalRouteDistance(routingPoints); traveledDistanceKm = 0.0; lastDistancePosition = null; updateDistanceLabel()
-        
+        isDriving = true; isPaused = false; currentMode = AppMode.NAVIGATION; completedPathPoints.clear(); completedPathPoints.add(routingPoints.first())
+        binding.actionButton.visibility = View.GONE; binding.navigationControlsCard.visibility = View.VISIBLE; binding.cancelRouteButton.visibility = View.GONE; binding.addFavoriteButton.visibility = View.GONE
+        binding.searchCard.visibility = View.GONE; binding.swapButtonContainer.visibility = View.GONE; binding.getFakeLocation.visibility = View.GONE; binding.setLocationButton.visibility = View.GONE; binding.replaceLocationButton.visibility = View.GONE
+        updateNavigationAddresses(); updateNavControlButtons(); isCameraFollowing = true; binding.cameraFollowToggle.visibility = View.VISIBLE; updateCameraFollowButton()
+        totalRouteDistanceKm = calculateTotalRouteDistance(routingPoints); traveledDistanceKm = 0.0; lastDistancePosition = null; updateDistanceLabel(); updateMarkersDraggableState()
         Intent(this, LocationService::class.java).apply { action = LocationService.ACTION_START_FOREGROUND }.also { startService(it) }
         locationService?.startRouteSimulation(points = routingPoints, speedKmh = currentSpeed, onPosition = { pos -> runOnUiThread { handleNavigationUpdate(pos) } }, onComplete = { runOnUiThread { onNavigationComplete() } })
     }
 
     private fun handleNavigationUpdate(pos: LatLng) {
         val time = System.currentTimeMillis(); currentNavigationPosition = pos; updateTraveledDistance(pos); updateSpeedLabel(currentSpeed)
-        
         if (PrefManager.isShowFakeIcon) updateFakeLocationMarker(pos)
         updateCompletedPath(pos)
-        
-        if (isCameraFollowing && time - lastCameraUpdateTime >= CAMERA_UPDATE_INTERVAL_MS) { 
-            val cameraOptions = CameraOptions.Builder().center(Point.fromLngLat(pos.longitude, pos.latitude)).build()
-            mapboxMap.easeTo(cameraOptions)
-            lastCameraUpdateTime = time 
-        }
+        if (isCameraFollowing && time - lastCameraUpdateTime >= CAMERA_UPDATE_INTERVAL_MS) { mapboxMap.easeTo(CameraOptions.Builder().center(Point.fromLngLat(pos.longitude, pos.latitude)).build()); lastCameraUpdateTime = time }
         previousLocation = pos
     }
 
-    private fun updateNavigationAddresses() {
-        lifecycleScope.launch {
-            val sPos = mapController.getStartPosition()
-            val dPos = mapController.getDestinationPosition()
-            if (sPos != null && dPos != null) { binding.navFromAddress.text = "• ${getAddressFromLocation(sPos)}"; binding.navToAddress.text = "• ${getAddressFromLocation(dPos)}" }
-        }
-    }
+    private fun updateNavigationAddresses() { lifecycleScope.launch { val sPos = mapController.getStartPosition(); val dPos = mapController.getDestinationPosition(); if (sPos != null && dPos != null) { binding.navFromAddress.text = "• ${getAddressFromLocation(sPos)}"; binding.navToAddress.text = "• ${getAddressFromLocation(dPos)}" } } }
 
     private fun stopNavigation() { locationService?.stopRouteSimulation() }
+    
     private fun updateSetLocationButton() { 
-        binding.setLocationButton.setImageResource(if (isGpsSet) R.drawable.ic_gps_off else R.drawable.ic_location_on)
-        binding.getFakeLocation.visibility = if (isGpsSet && PrefManager.isShowFakeIcon) View.VISIBLE else View.GONE
-        updateReplaceLocationButtonVisibility(); updateUseCurrentLocationButtonVisibility()
-    }
-
-    private fun updateSpeedLabel(speed: Double) {
-        try { val actual = io.github.mwarevn.fakegps.utils.SpeedSyncManager.getActualSpeed(); binding.speedLabel.text = if (actual > 0.01f) "${speed.toInt()} / ${actual.toInt()} km/h" else "${speed.toInt()} km/h" } 
-        catch (e: Exception) { binding.speedLabel.text = "${speed.toInt()} km/h" }
-    }
-
-    private fun updateReplaceLocationButtonVisibility() { 
-        val destPos = mapController.getDestinationPosition()
-        binding.replaceLocationButton.visibility = if (currentMode == AppMode.SEARCH && isGpsSet && destPos != null && currentFakeLocationPos != destPos) View.VISIBLE else View.GONE 
-    }
-
-    private fun updateFakeLocationMarker(position: LatLng) {
-        currentFakeLocationPos = position
-        if (!PrefManager.isShowFakeIcon) {
-            mapController.updateFakeLocationMarker(position, false)
-            return
+        isGpsSet = viewModel.isStarted 
+        binding.setLocationButton.apply { 
+            visibility = View.VISIBLE
+            setImageResource(if (isGpsSet) R.drawable.ic_gps_off else R.drawable.ic_location_on) 
         }
-        mapController.updateFakeLocationMarker(position, true)
-        if (isCameraFollowing && isDriving) {
-            mapController.moveCamera(position, animate = true)
-        }
+        binding.getFakeLocation.visibility = if (isGpsSet && PrefManager.isShowFakeIcon && !isDriving) View.VISIBLE else View.GONE
+        updateReplaceLocationButtonVisibility(); updateUseCurrentLocationButtonVisibility() 
     }
 
-    private fun restoreFakeLocationMarker() {
-        if (isGpsSet) {
-            val pos = LatLng(PrefManager.getLat, PrefManager.getLng)
-            updateFakeLocationMarker(pos)
-        } else {
-            mapController.updateFakeLocationMarker(LatLng(0.0, 0.0), false)
-        }
-        updateSetLocationButton()
-    }
+    private fun updateSpeedLabel(speed: Double) { try { val actual = io.github.mwarevn.fakegps.utils.SpeedSyncManager.getActualSpeed(); binding.speedLabel.text = if (actual > 0.01f) "${speed.toInt()} / ${actual.toInt()} km/h" else "${speed.toInt()} km/h" } catch (e: Exception) { binding.speedLabel.text = "${speed.toInt()} km/h" } }
 
-    override fun onShowFakeIconToggled(show: Boolean) {
-        if (!show) {
-            mapController.updateFakeLocationMarker(currentFakeLocationPos ?: LatLng(0.0, 0.0), false)
-        } else {
-            val positionToDraw = if (isDriving) currentNavigationPosition else currentFakeLocationPos
-            positionToDraw?.let { updateFakeLocationMarker(it) }
-        }
-        updateSetLocationButton()
-    }
+    private fun updateReplaceLocationButtonVisibility() { val destPos = mapController.getDestinationPosition(); binding.replaceLocationButton.visibility = if (currentMode == AppMode.SEARCH && isGpsSet && destPos != null && currentFakeLocationPos != destPos) View.VISIBLE else View.GONE }
 
-    private fun drawCompletedPathLocally() {
-        if (completedPathPoints.isNotEmpty()) {
-            mapController.drawCompletedPath(completedPathPoints, COMPLETED_ROUTE_COLOR, ROUTE_WIDTH + 1.0)
-        }
-    }
+    private fun updateFakeLocationMarker(position: LatLng) { currentFakeLocationPos = position; if (!PrefManager.isShowFakeIcon) { mapController.updateFakeLocationMarker(position, false); return }; mapController.updateFakeLocationMarker(position, true); if (isCameraFollowing && isDriving) mapController.moveCamera(position, animate = true) }
 
-    private fun updateCompletedPath(pos: LatLng) {
-        if (completedPathPoints.isEmpty() || distanceBetween(completedPathPoints.last(), pos) >= 5.0) {
-            completedPathPoints.add(pos)
-            if (completedPathPoints.size % 3 == 0) {
-                mapController.drawCompletedPath(completedPathPoints, COMPLETED_ROUTE_COLOR, ROUTE_WIDTH + 1.0)
-            }
-        }
-    }
+    private fun restoreFakeLocationMarker() { if (isGpsSet) updateFakeLocationMarker(LatLng(PrefManager.getLat, PrefManager.getLng)) else mapController.updateFakeLocationMarker(LatLng(0.0, 0.0), false); updateSetLocationButton() }
+
+    override fun onShowFakeIconToggled(show: Boolean) { if (!show) mapController.updateFakeLocationMarker(currentFakeLocationPos ?: LatLng(0.0, 0.0), false) else (if (isDriving) currentNavigationPosition else currentFakeLocationPos)?.let { updateFakeLocationMarker(it) }; updateSetLocationButton() }
+
+    private fun drawCompletedPathLocally() { if (completedPathPoints.isNotEmpty()) mapController.drawCompletedPath(completedPathPoints, COMPLETED_ROUTE_COLOR, ROUTE_WIDTH + 1.0) }
+
+    private fun updateCompletedPath(pos: LatLng) { if (completedPathPoints.isEmpty() || distanceBetween(completedPathPoints.last(), pos) >= 5.0) { completedPathPoints.add(pos); if (completedPathPoints.size % 3 == 0) mapController.drawCompletedPath(completedPathPoints, COMPLETED_ROUTE_COLOR, ROUTE_WIDTH + 1.0) } }
 
     private fun updateCameraFollowButton() { binding.cameraFollowToggle.setImageResource(if (isCameraFollowing) R.drawable.ic_camera_follow else R.drawable.ic_camera_free) }
     private fun distanceBetween(p1: LatLng, p2: LatLng): Double { val results = FloatArray(1); android.location.Location.distanceBetween(p1.latitude, p1.longitude, p2.latitude, p2.longitude, results); return results[0].toDouble() }
     private fun calculateTotalRouteDistance(points: List<LatLng>): Double { var dist = 0.0; for (i in 0 until points.size - 1) dist += distanceBetween(points[i], points[i + 1]); return dist / 1000.0 }
     private fun updateDistanceLabel() { binding.distanceLabel.text = String.format("%.2fkm/%.2fkm", traveledDistanceKm, totalRouteDistanceKm) }
     private fun updateTraveledDistance(pos: LatLng) { lastDistancePosition?.let { val d = distanceBetween(it, pos); if (d in 0.5..100.0) { traveledDistanceKm += d / 1000.0; updateDistanceLabel() } }; lastDistancePosition = pos }
-    private fun createFakeLocationCircle(center: LatLng, stroke: Int, fill: Int, centerColor: Int) {
-        // Mapbox Circle Annotation isn't standard in the same package, skipped for visual parity 
-        // We will rely on PointAnnotation or UserLocation
-    }
-
-    private fun createStationaryLocationCircle(center: LatLng) = createFakeLocationCircle(center, FAKE_LOCATION_STROKE_COLOR, FAKE_LOCATION_FILL_COLOR, FAKE_LOCATION_CENTER_COLOR)
 
     private fun onNavigationComplete() {
         isDriving = false; isPaused = false; binding.speedSlider.value = 52f; currentSpeed = 52.0; binding.speedLabel.text = "52 km/h"
         binding.navigationControlsCard.visibility = View.GONE; binding.cameraFollowToggle.visibility = View.GONE
-        
-        val destPos = mapController.getDestinationPosition()
-        val finalPos = currentNavigationPosition ?: routingPoints.lastOrNull() ?: destPos
-        if (finalPos != null) { 
-            isGpsSet = true; currentFakeLocationPos = finalPos; 
-            viewModel.update(true, finalPos.latitude, finalPos.longitude); 
-            updateFakeLocationMarker(finalPos); updateSetLocationButton() 
+        (currentNavigationPosition ?: routingPoints.lastOrNull() ?: mapController.getDestinationPosition())?.let { finalPos ->
+            currentFakeLocationPos = finalPos; viewModel.update(true, finalPos.latitude, finalPos.longitude)
+            updateFakeLocationMarker(finalPos)
         }
-        binding.completionActionsCard.visibility = View.VISIBLE
+        binding.completionActionsCard.visibility = View.VISIBLE; updateSetLocationButton(); updateMarkersDraggableState()
     }
+
+    private fun clearActiveNavigationData() {
+        mapController.clearRoute(); mapController.clearStartMarker(); mapController.clearDestinationMarker()
+        completedPathPoints.clear(); routingPoints = emptyList(); currentMode = AppMode.SEARCH; hasSelectedStartPoint = false
+        currentStartPos = null; currentDestPos = null; currentNavigationPosition = null
+        
+        binding.actionButton.visibility = View.GONE; binding.navigationControlsCard.visibility = View.GONE; binding.cameraFollowToggle.visibility = View.GONE
+        binding.completionActionsCard.visibility = View.GONE; binding.startSearchContainer.visibility = View.GONE; binding.useCurrentLocationContainer.visibility = View.GONE
+        binding.destinationSearch.text.clear(); binding.startSearch.text.clear(); binding.searchCard.visibility = View.VISIBLE
+        binding.addFavoriteButton.visibility = View.GONE; binding.routeLoadingCard.visibility = View.GONE; binding.routeErrorCard.visibility = View.GONE
+        
+        updateSetLocationButton(); updateMarkersDraggableState()
+    }
+
+    private fun onFinishNavigation() { clearActiveNavigationData() }
 
     private fun resetToSearchMode() {
-        mapController.clearAllMarkers()
-        mapController.clearRoute()
-        completedPathPoints.clear(); routingPoints = emptyList(); currentMode = AppMode.SEARCH; hasSelectedStartPoint = false
-        binding.actionButton.visibility = View.GONE; binding.navigationControlsCard.visibility = View.GONE; binding.cameraFollowToggle.visibility = View.GONE
-        binding.startSearchContainer.visibility = View.GONE; binding.useCurrentLocationContainer.visibility = View.GONE; binding.destinationSearch.text.clear()
-        binding.startSearch.text.clear(); binding.searchCard.visibility = View.VISIBLE; binding.addFavoriteButton.visibility = View.GONE; updateReplaceLocationButtonVisibility()
+        locationService?.stopRouteSimulation()
+        isDriving = false; isPaused = false; isGpsSet = false; viewModel.update(false, 0.0, 0.0); stopService(Intent(this, LocationService::class.java))
+        mapController.clearAllMarkers(); clearActiveNavigationData()
     }
-
 
     override fun onDestroy() { super.onDestroy(); if (isBound) { unbindService(serviceConnection); isBound = false }; serviceStateJob?.cancel(); PrefManager.sharedPreferences.unregisterOnSharedPreferenceChangeListener(prefChangeListener) }
     override fun onResume() { super.onResume(); PrefManager.sharedPreferences.registerOnSharedPreferenceChangeListener(prefChangeListener); updateNavigationUI() }
 
-    private fun updateNavigationUI() {
-        if (isDriving) {
-            binding.navigationControlsCard.visibility = View.VISIBLE; binding.searchCard.visibility = View.GONE; binding.cameraFollowToggle.visibility = View.VISIBLE
-            binding.setLocationButton.visibility = View.GONE; binding.getFakeLocation.visibility = View.GONE; updateNavControlButtons(); updateSpeedLabel(currentSpeed)
-            currentNavigationPosition?.let { updateFakeLocationMarker(it) }
-        }
-    }
-
-    // Removed Google onMarkerDrag Listeners
-
-    private fun onFinishNavigation() {
-        binding.completionActionsCard.visibility = View.GONE; binding.speedSlider.value = 52f; currentSpeed = 52.0; binding.speedLabel.text = "52 km/h"
-        mapController.clearRoute()
-        mapController.clearStartMarker()
-        mapController.clearDestinationMarker()
-        routingPoints = emptyList(); binding.destinationSearch.text.clear(); binding.startSearch.text.clear()
-        currentMode = AppMode.SEARCH; binding.actionButton.visibility = View.GONE; binding.navigationControlsCard.visibility = View.GONE; binding.cameraFollowToggle.visibility = View.GONE
-        binding.cancelRouteButton.visibility = View.GONE; binding.addFavoriteButton.visibility = View.GONE; binding.startSearchContainer.visibility = View.GONE; binding.useCurrentLocationContainer.visibility = View.GONE
-        binding.searchCard.visibility = View.VISIBLE; binding.getFakeLocation.visibility = View.VISIBLE
-    }
+    private fun updateNavigationUI() { if (isDriving) { binding.navigationControlsCard.visibility = View.VISIBLE; binding.searchCard.visibility = View.GONE; binding.cameraFollowToggle.visibility = View.VISIBLE; binding.setLocationButton.visibility = View.GONE; binding.getFakeLocation.visibility = View.GONE; updateNavControlButtons(); updateSpeedLabel(currentSpeed); currentNavigationPosition?.let { updateFakeLocationMarker(it) }; updateMarkersDraggableState() } else { updateSetLocationButton() } }
 
     private fun onRestartNavigation() { binding.completionActionsCard.visibility = View.GONE; isDriving = false; isPaused = false; completedPathPoints.clear(); if (routingPoints.isNotEmpty()) startNavigation() else showToast("Dữ liệu đã mất") }
     private fun onStopNavigationEarly() { locationService?.stopRouteSimulation() }
     private fun toggleNavigationControls() { val expanded = !PrefManager.navControlsExpanded; PrefManager.navControlsExpanded = expanded; binding.navControlsExpandable.visibility = if (expanded) View.VISIBLE else View.GONE; binding.navControlsToggle.setImageResource(if (expanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more) }
     private fun restoreNavigationControlsState() { val expanded = PrefManager.navControlsExpanded; binding.navControlsExpandable.visibility = if (expanded) View.VISIBLE else View.GONE; binding.navControlsToggle.setImageResource(if (expanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more) }
 
-    private fun getBitmapFromDrawable(resId: Int): Bitmap {
-        val drawable = ContextCompat.getDrawable(this, resId)
-        return if (drawable is BitmapDrawable) {
-            drawable.bitmap
-        } else {
-            val bitmap = Bitmap.createBitmap(drawable!!.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bitmap
-        }
-    }
+    private fun getBitmapFromDrawable(resId: Int): Bitmap { val drawable = ContextCompat.getDrawable(this, resId); return if (drawable is BitmapDrawable) drawable.bitmap else { val bitmap = Bitmap.createBitmap(drawable!!.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888); val canvas = Canvas(bitmap); drawable.setBounds(0, 0, canvas.width, canvas.height); drawable.draw(canvas); bitmap } }
 }

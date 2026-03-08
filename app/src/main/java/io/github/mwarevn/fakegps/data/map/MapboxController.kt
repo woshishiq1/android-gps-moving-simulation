@@ -7,6 +7,7 @@ import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
+import com.mapbox.maps.extension.style.layers.properties.generated.IconAnchor
 import com.mapbox.maps.plugin.animation.camera
 import com.mapbox.maps.plugin.animation.easeTo
 import com.mapbox.maps.plugin.annotation.annotations
@@ -67,6 +68,7 @@ class MapboxController(
             .withPoint(Point.fromLngLat(position.longitude, position.latitude))
             .withIconImage(icons.locationIcon)
             .withIconSize(2.5)
+            .withIconAnchor(IconAnchor.BOTTOM)
             .withDraggable(false)
         currentLocationMarker = pointAnnotationManager.create(options)
     }
@@ -81,6 +83,7 @@ class MapboxController(
             .withPoint(Point.fromLngLat(position.longitude, position.latitude))
             .withIconImage(icons.destinationIcon)
             .withIconSize(2.5)
+            .withIconAnchor(IconAnchor.BOTTOM)
             .withDraggable(true)
         destinationMarker = pointAnnotationManager.create(options)
     }
@@ -95,6 +98,7 @@ class MapboxController(
             .withPoint(Point.fromLngLat(position.longitude, position.latitude))
             .withIconImage(icons.startIcon)
             .withIconSize(2.5)
+            .withIconAnchor(IconAnchor.BOTTOM)
             .withDraggable(true)
         startMarker = pointAnnotationManager.create(options)
     }
