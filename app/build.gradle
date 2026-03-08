@@ -74,8 +74,6 @@ android {
     buildFeatures {
         viewBinding true
         buildConfig true
-
-        compose = false
     }
 
     namespace 'io.github.mwarevn.fakegps'

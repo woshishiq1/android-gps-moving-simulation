@@ -14,6 +14,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.location.Geocoder
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -49,6 +50,7 @@ import com.mapbox.maps.plugin.animation.camera
 import com.mapbox.maps.plugin.animation.easeTo
 import io.github.mwarevn.fakegps.network.RoutingService
 import io.github.mwarevn.fakegps.network.OsrmClient
+import io.github.mwarevn.fakegps.domain.route.RouteExtractorFactory
 
 /**
  * Clean redesigned MapActivity with Google Maps-like UX
@@ -166,6 +168,270 @@ class MapActivity : BaseMapActivity() {
         viewModel.doGetUserDetails(); observeFavorites(); observeRoute()
         Intent(this, LocationService::class.java).also { intent ->
             bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        }
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) {
+            android.util.Log.d("MapActivity", "=== INTENT DEBUG === Intent is null")
+            return
+        }
+        
+        // === COMPREHENSIVE INTENT LOGGING ===
+        android.util.Log.d("MapActivity", "=== INTENT DEBUG START ===")
+        android.util.Log.d("MapActivity", "Action: ${intent.action}")
+        android.util.Log.d("MapActivity", "Data: ${intent.data}")
+        android.util.Log.d("MapActivity", "Data URI: ${intent.dataString}")
+        android.util.Log.d("MapActivity", "Type: ${intent.type}")
+        android.util.Log.d("MapActivity", "Package: ${intent.`package`}")
+        android.util.Log.d("MapActivity", "Component: ${intent.component}")
+        
+        // Log all categories
+        val categories = intent.categories
+        if (categories != null) {
+            android.util.Log.d("MapActivity", "Categories: $categories")
+        }
+        
+        // Log all extras
+        val extras = intent.extras
+        if (extras != null && !extras.isEmpty) {
+            android.util.Log.d("MapActivity", "Extras count: ${extras.size()}")
+            for (key in extras.keySet()) {
+                val value = extras.get(key)
+                android.util.Log.d("MapActivity", "  Extra[$key] = $value (type: ${value?.javaClass?.simpleName})")
+            }
+        } else {
+            android.util.Log.d("MapActivity", "No extras")
+        }
+        
+        // Log shared text specifically
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+        if (sharedText != null) {
+            android.util.Log.d("MapActivity", "EXTRA_TEXT (shared text): $sharedText")
+        }
+        
+        // Log subject
+        val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+        if (subject != null) {
+            android.util.Log.d("MapActivity", "EXTRA_SUBJECT: $subject")
+        }
+        
+        // Log email data
+        val emails = intent.getStringArrayExtra(Intent.EXTRA_EMAIL)
+        if (emails != null) {
+            android.util.Log.d("MapActivity", "EXTRA_EMAIL: ${emails.toList()}")
+        }
+        
+        android.util.Log.d("MapActivity", "=== INTENT DEBUG END ===")
+        
+        val action = intent.action
+        val data: Uri? = intent.data
+
+        lifecycleScope.launch {
+            // Wait for map ready
+            var attempts = 0
+            while (!::mapController.isInitialized && attempts < 20) {
+                delay(200)
+                attempts++
+            }
+            if (!::mapController.isInitialized) {
+                android.util.Log.e("MapActivity", "Map controller not initialized after 20 attempts")
+                return@launch
+            }
+
+            when {
+                Intent.ACTION_SEND == action && sharedText != null -> {
+                    android.util.Log.d("MapActivity", "▶ Processing ACTION_SEND with shared text: $sharedText")
+                    // Switch to IO context for URL resolution, then back to Main for UI updates
+                    withContext(Dispatchers.Default) {
+                        processSharedText(sharedText)
+                    }
+                }
+                Intent.ACTION_VIEW == action && data != null -> {
+                    android.util.Log.d("MapActivity", "▶ Processing ACTION_VIEW with URI: $data")
+                    processGeoUri(data)
+                }
+                Intent.ACTION_VIEW == action && data == null && sharedText != null -> {
+                    android.util.Log.d("MapActivity", "▶ Processing ACTION_VIEW (no data URI) with shared text: $sharedText")
+                    lifecycleScope.launch {
+                        processSharedText(sharedText)
+                    }
+                }
+                else -> {
+                    android.util.Log.d("MapActivity", "⚠ Unhandled intent action: $action, data: $data, sharedText: $sharedText")
+                }
+            }
+        }
+    }
+
+    private suspend fun processSharedText(text: String) {
+        android.util.Log.d("MapActivity", "▶▶ Processing shared text: Length=${text.length}, prefix=${text.take(100)}")
+        
+        // Extract URLs with better regex
+        val urlRegex = Regex("""https?://[^\s]+""")
+        val urlMatch = urlRegex.find(text)
+        
+        if (urlMatch != null) {
+            val url = urlMatch.value.trim()
+            android.util.Log.d("MapActivity", "✓ Found URL: $url")
+            
+            // Use factory to find appropriate extractor
+            val factory = RouteExtractorFactory.getInstance()
+            val extractor = factory.getExtractor(url)
+            
+            if (extractor != null) {
+                try {
+                    val routeData = extractor.extract(url)
+                    if (routeData != null) {
+                        android.util.Log.d("MapActivity", "✓ Successfully extracted route from ${routeData.appName}")
+                        runOnUiThread {
+                            // Set markers and plan route
+                            if (routeData.startPoint != null) {
+                                setStartMarker(routeData.startPoint)
+                            }
+                            setDestinationAndEnterRouteMode(routeData.endPoint)
+                        }
+                        return
+                    } else {
+                        android.util.Log.d("MapActivity", "⚠ Extractor could not parse the URL")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MapActivity", "✗ Error during extraction: ${e.message}", e)
+                }
+            } else {
+                android.util.Log.d("MapActivity", "⚠ No extractor found for URL")
+            }
+        } else {
+            android.util.Log.d("MapActivity", "⚠ No URL found in shared text")
+        }
+        
+        // Fallback to text search
+        val cleanQuery = text.replace(Regex("""https?://[^\s]+"""), "").replace("·", "").trim()
+        if (cleanQuery.isNotEmpty()) {
+            android.util.Log.d("MapActivity", "→ Fallback: Searching location by text query: '$cleanQuery'")
+            searchLocation(cleanQuery) { pos ->
+                android.util.Log.d("MapActivity", "✓ Text search found location: $pos")
+                setDestinationAndEnterRouteMode(pos)
+            }
+        } else {
+            android.util.Log.d("MapActivity", "⚠ No text query available for fallback")
+        }
+    }
+
+    private fun processGeoUri(uri: Uri) {
+        android.util.Log.d("MapActivity", "▶▶ Processing URI: $uri")
+        android.util.Log.d("MapActivity", "  Scheme: ${uri.scheme}")
+        android.util.Log.d("MapActivity", "  Host: ${uri.host}")
+        android.util.Log.d("MapActivity", "  Path: ${uri.path}")
+        android.util.Log.d("MapActivity", "  Query: ${uri.query}")
+        android.util.Log.d("MapActivity", "  Fragment: ${uri.fragment}")
+        android.util.Log.d("MapActivity", "  All query params:")
+        uri.queryParameterNames.forEach { param ->
+            android.util.Log.d("MapActivity", "    $param = ${uri.getQueryParameter(param)}")
+        }
+        
+        when (uri.scheme) {
+            "geo" -> {
+                android.util.Log.d("MapActivity", "→ Processing 'geo' scheme URI")
+                val ssp = uri.schemeSpecificPart
+                val coords = ssp.split("?")[0].split(",")
+                if (coords.size >= 2) {
+                    val lat = coords[0].toDoubleOrNull()
+                    val lon = coords[1].toDoubleOrNull()
+                    if (lat != null && lon != null) {
+                        android.util.Log.d("MapActivity", "✓ Geo URI coords: $lat, $lon")
+                        setDestinationAndEnterRouteMode(LatLng(lat, lon))
+                        return
+                    }
+                }
+                // Fallback: try to extract query parameter
+                uri.getQueryParameter("q")?.let { q ->
+                    android.util.Log.d("MapActivity", "→ Geo URI query parameter: $q")
+                    lifecycleScope.launch { 
+                        searchLocation(q) { setDestinationAndEnterRouteMode(it) } 
+                    }
+                } ?: run {
+                    android.util.Log.d("MapActivity", "⚠ Could not extract coordinates from geo URI")
+                }
+            }
+            "google.navigation" -> {
+                android.util.Log.d("MapActivity", "→ Processing 'google.navigation' scheme URI")
+                val ssp = uri.schemeSpecificPart
+                // google.navigation:///?q=lat,lon or google.navigation:///?q=address&destination=lat,lon
+                uri.getQueryParameter("q")?.let { q ->
+                    android.util.Log.d("MapActivity", "→ google.navigation 'q' parameter: $q")
+                    // Try to extract coordinates from q parameter
+                    val coordMatch = Regex("""([-\d.]+),([-\d.]+)""").find(q)
+                    if (coordMatch != null) {
+                        val lat = coordMatch.groupValues[1].toDoubleOrNull()
+                        val lon = coordMatch.groupValues[2].toDoubleOrNull()
+                        if (lat != null && lon != null) {
+                            android.util.Log.d("MapActivity", "✓ Extracted coords from q: $lat, $lon")
+                            setDestinationAndEnterRouteMode(LatLng(lat, lon))
+                            return@let
+                        }
+                    }
+                    // Otherwise search for location
+                    android.util.Log.d("MapActivity", "→ Searching location by text: $q")
+                    lifecycleScope.launch { 
+                        searchLocation(q) { setDestinationAndEnterRouteMode(it) } 
+                    }
+                } ?: run {
+                    // Try destination parameter
+                    uri.getQueryParameter("destination")?.let { dest ->
+                        android.util.Log.d("MapActivity", "→ google.navigation 'destination' parameter: $dest")
+                        lifecycleScope.launch { 
+                            searchLocation(dest) { setDestinationAndEnterRouteMode(it) } 
+                        }
+                    } ?: run {
+                        android.util.Log.d("MapActivity", "⚠ No q or destination parameter in google.navigation URI")
+                    }
+                }
+            }
+            else -> {
+                android.util.Log.d("MapActivity", "⚠ Unhandled URI scheme: '${uri.scheme}'")
+            }
+        }
+    }
+
+    private fun setDestinationAndEnterRouteMode(pos: LatLng, autoStart: Boolean = true) {
+        runOnUiThread {
+            setDestinationMarker(pos)
+            enterRoutePlanMode()
+            if (autoStart) {
+                // Use current GPS position or fake location position
+                val currentPos = if (isGpsSet) {
+                    LatLng(PrefManager.getLat, PrefManager.getLng)
+                } else {
+                    // Try to use map's current camera position as fallback
+                    try {
+                        val center = mapboxMap.cameraState.center
+                        LatLng(center.latitude(), center.longitude())
+                    } catch (e: Exception) {
+                        android.util.Log.e("MapActivity", "Error getting map center", e)
+                        // Last resort: use a default location (Ha Noi, VN)
+                        LatLng(21.0285, 105.8542)
+                    }
+                }
+                android.util.Log.d("MapActivity", "Setting start marker: $currentPos")
+                setStartMarkerWithSelection(currentPos)
+            }
+            updateUseCurrentLocationButtonVisibility()
+            
+            // Auto find address names for UI
+            lifecycleScope.launch {
+                val start = currentStartPos
+                val dest = currentDestPos
+                if (start != null) start.getAddress(this@MapActivity).collect { binding.startSearch.setText(it) }
+                if (dest != null) dest.getAddress(this@MapActivity).collect { binding.destinationSearch.setText(it) }
+            }
         }
     }
 
