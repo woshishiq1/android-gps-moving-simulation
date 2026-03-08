@@ -11,27 +11,33 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
-
+import timber.log.Timber
 
 class UpdateChecker @Inject constructor(private val apiResponse : GitHubService) {
 
-
     fun getLatestRelease() = callbackFlow {
         withContext(Dispatchers.IO){
-            getReleaseList()?.let { gitHubReleaseResponse ->
-                val currentTag = gitHubReleaseResponse.tagName
-                val latestVersion = currentTag?.replace("v", "") ?: ""
-                val currentVersion = BuildConfig.TAG_NAME
+            val response = getReleaseList()
+            if (response == null) {
+                Timber.e("UpdateChecker: Failed to fetch release from GitHub")
+                this@callbackFlow.trySend(null).isSuccess
+                return@withContext
+            }
 
-                // Check if update is enabled and version is different
-                if (currentTag != null && latestVersion != currentVersion && !PrefManager.isUpdateDisabled) {
-                    //New update available!
-                    val asset =
-                        gitHubReleaseResponse.assets?.firstOrNull { it.name?.endsWith(".apk") == true }
-                    val releaseUrl =
-                        asset?.browserDownloadUrl?.replace("/download/", "/tag/")?.apply {
-                            substring(0, lastIndexOf("/"))
-                        }
+            response.let { gitHubReleaseResponse ->
+                val currentTag = gitHubReleaseResponse.tagName
+                val latestVersion = currentTag?.replace("v", "")?.trim() ?: ""
+                val currentVersion = BuildConfig.TAG_NAME.trim()
+
+                Timber.d("UpdateChecker: Latest=$latestVersion, Current=$currentVersion, Disabled=${PrefManager.isUpdateDisabled}")
+
+                // Kiểm tra nếu phiên bản khác nhau và tính năng update không bị tắt
+                if (latestVersion.isNotEmpty() && latestVersion != currentVersion && !PrefManager.isUpdateDisabled) {
+                    Timber.i("UpdateChecker: New update found!")
+                    val asset = gitHubReleaseResponse.assets?.firstOrNull { it.name?.endsWith(".apk") == true }
+                    // Sử dụng URL mặc định vì GitHubRelease không có htmlUrl
+                    val releaseUrl = "https://github.com/mwarevn/fake-gps/releases/latest"
+                    
                     val name = gitHubReleaseResponse.name ?: "Bản cập nhật mới"
                     val body = gitHubReleaseResponse.body ?: "Vui lòng cập nhật để tiếp tục sử dụng ứng dụng."
                     val publishedAt = gitHubReleaseResponse.publishedAt ?: ""
@@ -41,33 +47,23 @@ class UpdateChecker @Inject constructor(private val apiResponse : GitHubService)
                             name,
                             body,
                             publishedAt,
-                            asset?.browserDownloadUrl
-                                ?: "https://github.com/mwarevn/fake-gps/releases",
-                            asset?.name ?: "app-release.apk",
-                            releaseUrl ?: "https://github.com/mwarevn/fake-gps/releases"
+                            asset?.browserDownloadUrl ?: releaseUrl,
+                            asset?.name ?: "app-arm64-v8a-release.apk",
+                            releaseUrl
                         )
                     ).isSuccess
                 } else {
                     this@callbackFlow.trySend(null).isSuccess
                 }
-            } ?: run {
-                this@callbackFlow.trySend(null).isSuccess
             }
         }
-        awaitClose {  }
+        awaitClose { }
     }
 
-
     private fun getReleaseList(): GitHubRelease? {
-
-        runCatching {
+        return runCatching {
             apiResponse.getReleases().execute().body()
-        }.onSuccess {
-            return it
-        }.onFailure {
-            return null
-        }
-        return null
+        }.getOrNull()
     }
 
     fun clearCachedDownloads(context: Context){
