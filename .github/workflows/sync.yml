@@ -1,0 +1,134 @@
+name: Sync Upstream (Ultimate Smart Mirror)
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 */6 * * *' 
+  workflow_dispatch:      
+
+env:
+  # 【配置 1】是否开启冗余删除 (同步删除上游已删的 Release)true开启 false关闭
+  DELETE_EXCESS_RELEASES: false 
+
+  # 【配置 2】上游（原作者）的仓库名 (格式: 用户名/仓库名)
+  UPSTREAM_REPO: "minhdevs/android-gps-moving-simulation"
+
+  # 【配置 3】你的仓库地址 (保持默认即可)
+  TARGET_REPO: "${{ github.repository }}"
+
+  # 【配置 4】主分支名称 (如果上游是 master 请改为 master)
+  MAIN_BRANCH: "main"
+
+jobs:
+  sync_full:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git || true
+          git fetch upstream ${{ env.MAIN_BRANCH }} --tags
+
+      - name: Sync Code & Protect Workflows
+        run: |
+          set -e
+          # 1. 深度备份
+          mkdir -p /tmp/backup_workflows
+          cp -r .github/workflows/* /tmp/backup_workflows/
+
+          # 2. 获取上游 Commit 信息
+          UPSTREAM_MSG=$(git log upstream/${{ env.MAIN_BRANCH }} -1 --format=%s || echo "Sync upstream")
+
+          # 3. 对齐上游
+          git checkout -B ${{ env.MAIN_BRANCH }}
+          git reset --hard upstream/${{ env.MAIN_BRANCH }}
+
+          # 4. 强力恢复
+          mkdir -p .github/workflows
+          cp -r /tmp/backup_workflows/* .github/workflows/
+
+          # 5. 静默运行控制 (真正修复逻辑的地方)
+          git add -A
+          # 对比暂存区和远程分支内容
+          if git diff --cached --quiet origin/${{ env.MAIN_BRANCH }}; then
+            echo "代码与脚本内容均无变化，跳过提交。"
+          else
+            # 如果有变化，判断是代码变了还是仅仅脚本变了
+            if git diff --cached --quiet origin/${{ env.MAIN_BRANCH }} -- . ':!.github/workflows'; then
+              echo "仅检测到脚本变动，执行维护提交。"
+              git commit -m "Chore: maintain sync workflow" || true
+            else
+              echo "检测到上游代码更新，执行同步提交。"
+              git commit -m "$UPSTREAM_MSG" || true
+            fi
+            git push origin ${{ env.MAIN_BRANCH }} --force
+          fi
+          # 始终强制同步标签
+          git push origin --tags --force --prune
+
+      - name: Sync Releases (Smart Mirror)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # 获取 Tag 列表
+          UPSTREAM_TAGS=$(gh release list --repo "$UPSTREAM_REPO" --limit 100 --json tagName -q '.[].tagName')
+          TARGET_TAGS=$(gh release list --repo "$TARGET_REPO" --limit 100 --json tagName -q '.[].tagName')
+
+          # A. 处理冗余删除
+          if [ "${{ env.DELETE_EXCESS_RELEASES }}" = "true" ]; then
+            for tag in $TARGET_TAGS; do
+              if ! echo "$UPSTREAM_TAGS" | grep -Fxq "$tag"; then
+                gh release delete "$tag" --repo "$TARGET_REPO" --yes || true
+              fi
+            done
+          fi
+
+          # B. 倒序同步
+          TAGS_TO_SYNC=$(echo "$UPSTREAM_TAGS" | tac)
+          for tag in $TAGS_TO_SYNC; do
+            rel_json=$(gh release view "$tag" --repo "$UPSTREAM_REPO" --json name,body,isPrerelease)
+            rel_name=$(echo "$rel_json" | jq -r '.name')
+            rel_body=$(echo "$rel_json" | jq -r '.body')
+            rel_is_pre=$(echo "$rel_json" | jq -r '.isPrerelease')
+
+            if gh release view "$tag" --repo "$TARGET_REPO" &>/dev/null; then
+              gh release edit "$tag" --repo "$TARGET_REPO" --title "$rel_name" --notes "$rel_body" --prerelease=$rel_is_pre
+            else
+              mkdir -p "/tmp/assets-$tag" && cd "/tmp/assets-$tag"
+              gh release download "$tag" --repo "$UPSTREAM_REPO" --skip-existing || true
+              ARGS=("$tag" --repo "$TARGET_REPO" --title "$rel_name" --notes "$rel_body")
+              [ "$rel_is_pre" = "true" ] && ARGS+=("--prerelease")
+              mapfile -t files < <(find . -maxdepth 1 -type f ! -name ".*")
+              [[ ${#files[@]} -gt 0 ]] && gh release create "${ARGS[@]}" "${files[@]}" || gh release create "${ARGS[@]}"
+              cd /home/runner && rm -rf "/tmp/assets-$tag"
+            fi
+          done
+
+  cleanup_runs:
+    runs-on: ubuntu-latest
+    needs: sync_full
+    permissions:
+      actions: write
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ env.TARGET_REPO }}
+          retain_days: 0
+          keep_minimum_runs: 10
