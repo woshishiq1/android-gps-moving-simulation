@@ -17,12 +17,16 @@ env:
   # 【配置 3】你的仓库地址 (保持默认即可)
   TARGET_REPO: "${{ github.repository }}"
 
-  # 【配置 4】主分支名称 (如果上游是 master 请改为 master)
-  MAIN_BRANCH: "main"
+  # 【配置 4】上游主分支名称 (如果上游是 master 请改为 master)
+  UPSTREAM_BRANCH: "main"
+
+  # 【配置 5】本地仓库主分支名称 (你想推送到自己仓库的哪个分支)
+  LOCAL_BRANCH: "main"
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # 保留权限配置作为双重保险
     permissions:
       contents: write
       actions: write
@@ -32,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # 使用你设置的变量 MY_GIT_TOKEN 以绕过默认 GITHUB_TOKEN 的工作流权限限制
+          # 使用你的 MY_GIT_TOKEN 以确保具备推送 workflows 目录的权限
           token: ${{ secrets.MY_GIT_TOKEN }}
 
       - name: Setup git identity
@@ -43,7 +47,7 @@ jobs:
       - name: Fetch upstream
         run: |
           git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git || true
-          git fetch upstream ${{ env.MAIN_BRANCH }} --tags
+          git fetch upstream ${{ env.UPSTREAM_BRANCH }} --tags
 
       - name: Sync Code & Protect Workflows
         run: |
@@ -53,11 +57,11 @@ jobs:
           cp -r .github/workflows/* /tmp/backup_workflows/
 
           # 2. 获取上游 Commit 信息
-          UPSTREAM_MSG=$(git log upstream/${{ env.MAIN_BRANCH }} -1 --format=%s || echo "Sync upstream")
+          UPSTREAM_MSG=$(git log upstream/${{ env.UPSTREAM_BRANCH }} -1 --format=%s || echo "Sync upstream")
 
           # 3. 对齐上游
-          git checkout -B ${{ env.MAIN_BRANCH }}
-          git reset --hard upstream/${{ env.MAIN_BRANCH }}
+          git checkout -B ${{ env.LOCAL_BRANCH }}
+          git reset --hard upstream/${{ env.UPSTREAM_BRANCH }}
 
           # 4. 强力恢复
           mkdir -p .github/workflows
@@ -66,25 +70,24 @@ jobs:
           # 5. 静默运行控制 (真正修复逻辑的地方)
           git add -A
           # 对比暂存区和远程分支内容
-          if git diff --cached --quiet origin/${{ env.MAIN_BRANCH }}; then
+          if git diff --cached --quiet origin/${{ env.LOCAL_BRANCH }}; then
             echo "代码与脚本内容均无变化，跳过提交。"
           else
             # 如果有变化，判断是代码变了还是仅仅脚本变了
-            if git diff --cached --quiet origin/${{ env.MAIN_BRANCH }} -- . ':!.github/workflows'; then
+            if git diff --cached --quiet origin/${{ env.LOCAL_BRANCH }} -- . ':!.github/workflows'; then
               echo "仅检测到脚本变动，执行维护提交。"
               git commit -m "Chore: maintain sync workflow" || true
             else
               echo "检测到上游代码更新，执行同步提交。"
               git commit -m "$UPSTREAM_MSG" || true
             fi
-            git push origin ${{ env.MAIN_BRANCH }} --force
+            git push origin ${{ env.LOCAL_BRANCH }} --force
           fi
           # 始终强制同步标签
           git push origin --tags --force --prune
 
       - name: Sync Releases (Smart Mirror)
         env:
-          # 同步 Release 步骤也建议换成你的 Token 以防万一
           GITHUB_TOKEN: ${{ secrets.MY_GIT_TOKEN }}
         run: |
           set -e
