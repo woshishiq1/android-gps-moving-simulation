@@ -23,7 +23,7 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # 核心修复：权限配置，解决推送 workflow 报错
+    # 这里是修复核心：改用 actions: write 以避开解析器对 'workflows' 关键字的报错
     permissions:
       contents: write
       actions: write
